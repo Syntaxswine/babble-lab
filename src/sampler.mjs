@@ -1,24 +1,29 @@
-// The other mouth: instead of synthesising each syllable, play a second of a
+// The other mouth: instead of synthesising each syllable, play a piece of a
 // recording that LOOKS like it. The plan is untouched — timing, melody,
 // emphasis, pauses and the text reveal all come from prosody.mjs exactly as for
 // the synth — only the sound inside each unit's slot changes.
 //
-// Which second? Two questions, both answered from the picture (look.mjs):
+// Which piece? Two questions, both answered from the picture (look.mjs):
 //
-//   how does the syllable OPEN?    a stop           -> a "struck" second (a vertical line)
-//     (its manner)                 a hiss           -> a "wash" second   (speckle)
-//                                  anything softer  -> a "tonal" second  (horizontal stripes)
+//   how does the syllable OPEN?    a stop           -> a "struck" piece (a vertical line)
+//     (its manner)                 a hiss           -> a "wash" piece   (grain)
+//                                  anything softer  -> a "tonal" piece  (horizontal stripes)
 //   how BRIGHT is its vowel?       "ee" has ink high in the picture, "oo" low;
-//     (its place)                  seconds within a look are ordered by ink height,
+//     (its place)                  pieces within a look are ordered by ink height,
 //                                  so the vowel's F2 picks how far along to reach
 //
 // Manner chooses the look, place chooses within it: the tongue's rule again.
 // A small hash(word, syllable) nudge keeps one vowel from always being the same
-// second, while the same word still always comes out the same.
+// piece, while the same word still always comes out the same.
+//
+// The piece only says where to START. From there the read follows the ORIGINAL
+// recording, straight through into whatever piece came next in it — so a
+// syllable longer than a quarter-second piece does not fall silent or loop, and
+// a pluck caught at the end of its piece keeps its own decay.
 //
 // Pitch is tape speed: voice.pitch 140 plays the recording as it is, 280 an
 // octave up and twice as fast. The melody of the line (a question's rise) bends
-// that speed, which is audible even in chords. A struck second is read from
+// that speed, which is audible even in chords. A struck piece is read from
 // just before its edge, so the hit lands on the syllable.
 
 import { PHONEMES } from './phonemes.mjs';
@@ -54,9 +59,24 @@ export function chooseSegment(bank, unit, wordText, k) {
   return pool[clamp(Math.round(brightnessOf(unit) * (n - 1) + nudge), 0, n - 1)];
 }
 
-// two cascaded RBJ low-passes over a copy: keeps a sped-up read from aliasing
-function lowpassed(x, fc, sr) {
-  const y = Float32Array.from(x);
+// Samples [a, b) of the recording AS IT WAS, gathered back from the arranged pieces.
+export function originalSpan(bank, a, b) {
+  const len = bank.pieceLength;
+  const out = new Float32Array(Math.max(0, b - a));
+  for (let j = Math.max(a, 0); j < b;) {
+    const o = Math.floor(j / len);
+    const si = o < bank.byOrigin.length ? bank.byOrigin[o] : -1;
+    const off = j - o * len;
+    const n = Math.min(len - off, b - j);
+    if (si >= 0) out.set(bank.segments[si].samples.subarray(off, off + n), j - a);
+    else if (o >= bank.byOrigin.length) break; // past the end of the recording: silence
+    j += n;
+  }
+  return out;
+}
+
+// two cascaded RBJ low-passes, in place: keeps a sped-up read from aliasing
+function lowpass(y, fc, sr) {
   const w = (2 * Math.PI * fc) / sr, c = Math.cos(w), al = Math.sin(w) / (2 * 0.7071), a0 = 1 + al;
   const b0 = (1 - c) / 2 / a0, b1 = (1 - c) / a0, a1 = (-2 * c) / a0, a2 = (1 - al) / a0;
   for (let pass = 0; pass < 2; pass++) {
@@ -71,6 +91,8 @@ export function synthesizeFromBank(plan, bank, sr) {
   const out = new Float32Array(Math.ceil((plan.duration + 0.04) * sr));
   const base = v.pitch / NATIVE_HZ;
   const srcRate = bank.sampleRate;
+  const len = bank.pieceLength;
+  const recorded = bank.segments.length * len;
   const vibW = (2 * Math.PI * v.vibRate) / sr;
   const perWord = new Map();
   const used = [];
@@ -84,33 +106,37 @@ export function synthesizeFromBank(plan, bank, sr) {
     const look = seg.look;
     const dur = u.t1 - u.t0;
     const n = Math.floor(dur * sr);
+    const topRate = base * Math.pow(2, (Math.max(u.p0, u.p1) + v.vibDepth) / 12);
     const meanRate = base * Math.pow(2, (u.p0 + u.p1) / 24);
-    const need = meanRate * dur; // seconds of recording this slot will read
-    const segSeconds = seg.samples.length / srcRate;
-    let start = look === 'struck' ? seg.cue - 0.004 : seg.body;
-    start = clamp(Math.min(start, segSeconds - need), 0, Math.max(0, segSeconds - 0.02));
+
+    // where in the ORIGINAL recording this unit starts reading, and how much of it it may need
+    const startIn = Math.max(0, look === 'struck' ? seg.cue - 0.004 : seg.body);
+    const startAbs = seg.origin * len + Math.round(startIn * srcRate);
+    const a = Math.max(0, startAbs - 2);
+    const b = Math.min(recorded, startAbs + Math.ceil(topRate * dur * srcRate) + 8);
+    const src = originalSpan(bank, a, b);
     const step0 = (meanRate * srcRate) / sr;
-    const src = step0 > 1.05 ? lowpassed(seg.samples, (0.45 * srcRate) / step0, srcRate) : seg.samples;
+    if (step0 > 1.05) lowpass(src, (0.45 * srcRate) / step0, srcRate);
 
     const attack = Math.max(1, Math.floor((look === 'struck' ? 0.002 : 0.012) * sr));
     const release = Math.max(1, Math.floor(Math.min(0.03, dur * 0.35) * sr));
     const gain = u.amp * seg.gain;
     const o0 = Math.floor(u.t0 * sr);
-    let pos = start * srcRate;
+    let pos = startAbs - a;
     for (let i = 0; i < n && o0 + i < out.length; i++) {
       const st = u.p0 + ((u.p1 - u.p0) * i) / n + (v.vibDepth > 0 ? v.vibDepth * Math.sin(vibW * (o0 + i)) : 0);
       const j = Math.floor(pos);
-      if (j + 2 >= src.length) break; // ran out of second: the unit simply ends early
+      if (j + 2 >= src.length) break; // the recording itself ran out: the unit ends early
       // 4-point Hermite
       const f = pos - j, xm = src[j > 0 ? j - 1 : 0], x0 = src[j], x1 = src[j + 1], x2 = src[j + 2];
       const c1 = 0.5 * (x1 - xm), c2 = xm - 2.5 * x0 + 2 * x1 - 0.5 * x2, c3 = 0.5 * (x2 - xm) + 1.5 * (x0 - x1);
       const s = ((c3 * f + c2) * f + c1) * f + x0;
-      const left = (src.length - 2 - pos) / (base * srcRate / sr); // output samples until the recording runs out
+      const left = (src.length - 2 - pos) / ((base * srcRate) / sr); // output samples until the recording runs out
       const env = Math.min(1, i / attack, (n - i) / release, Math.max(0, left) / release);
       out[o0 + i] += s * gain * env;
       pos += (base * Math.pow(2, st / 12) * srcRate) / sr;
     }
-    used.push({ unit: plan.units.indexOf(u), segment: segIndex, look, second: seg.second, start });
+    used.push({ unit: plan.units.indexOf(u), segment: segIndex, look, origin: seg.origin, time: startAbs / srcRate, pieces: Math.floor((a + Math.min(pos, src.length)) / len) - seg.origin + 1 });
   }
   return { samples: out, used };
 }

@@ -59,7 +59,7 @@ for (const file of fs.existsSync(banksDir) ? fs.readdirSync(banksDir).filter((f)
     }
     bankRows += `<tr><th>${esc(bank.name)}</th><td class="dim">${esc(label)}</td>${cells}</tr>\n`;
   }
-  bankRows += `<tr><th>${esc(bank.name)}</th><td class="dim">the bank itself: the recording re-arranged by look (${Object.entries(bank.looks).map(([k, v]) => `${v.length} ${k}`).join(', ')})</td><td colspan="2"><audio controls preload="none" src="../banks/${esc(file)}"></audio></td></tr>\n`;
+  bankRows += `<tr><th>${esc(bank.name)}</th><td class="dim">the bank itself: ${bank.segments.length} pieces of ${bank.segmentSeconds} s, the recording re-arranged by look (${Object.entries(bank.looks).map(([k, v]) => `${v.length} ${k}`).join(', ')})</td><td colspan="2"><audio controls preload="none" src="../banks/${esc(file)}"></audio></td></tr>\n`;
   console.log(`bank: ${bank.name}`);
 }
 
@@ -72,7 +72,7 @@ table{border-collapse:collapse}th{text-align:left;padding-right:14px}td,th{borde
 <table><tr><th></th><th></th>${LINES.map(([, t]) => `<th class="dim">${esc(t)}</th>`).join('')}</tr>
 ${rows}</table>
 ${bankRows ? `<h2>speaking with a recording</h2>
-<p class="dim">Same lines, same timing and melody — but each syllable is a slice of a recording that LOOKS like it: a stop takes a second with a sharp vertical line, a hiss a grainy one, anything softer a smooth one; brighter vowels reach for seconds with ink higher in the picture. Pitch is tape speed.</p>
+<p class="dim">Same lines, same timing and melody — but each syllable starts on a piece of a recording that LOOKS like it: a stop takes a piece with a sharp vertical line, a hiss a grainy one, anything softer a smooth one; brighter vowels reach for pieces with ink higher in the picture. A syllable longer than its piece reads on through the recording. Pitch is tape speed.</p>
 <table>${bankRows}</table>` : ''}
 <h2>one voice, three tongues</h2>
 <p class="dim">Same text, same voice. A tongue permutes sounds within their manner class: the rhythm stays, the words go.</p>

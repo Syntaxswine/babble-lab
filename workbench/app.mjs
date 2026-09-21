@@ -1,7 +1,7 @@
 // The workbench. Type a line, shape a voice, watch and hear what the engine does
 // with it. Everything audible comes from ../src — this file only draws and plays.
 
-import { render, resolveVoice, randomVoice, compactVoice, encodeWav, makeBank, encodeBank, decodeBank, PRESETS, PARAMS, FX_PARAMS, MODES, WAVES } from '../src/index.mjs';
+import { render, resolveVoice, randomVoice, compactVoice, encodeWav, makeBank, encodeBank, decodeBank, recut, PRESETS, PARAMS, FX_PARAMS, MODES, WAVES } from '../src/index.mjs';
 import { createSpeaker } from '../src/runtime.mjs';
 import { spectrogram } from './spectro.mjs';
 
@@ -165,7 +165,7 @@ function readout(ev) {
   const t = ((ev.clientX - r.left) / r.width) * (rendered.samples.length / rendered.sampleRate);
   const u = rendered.plan.units.find((q) => t >= q.t0 && t < q.t1);
   const took = u && rendered.used ? rendered.used.find((q) => q.unit === rendered.plan.units.indexOf(u)) : null;
-  const from = took ? ` · ${took.look} second ${Math.floor(took.second / 60)}:${String(took.second % 60).padStart(2, '0')} of the recording` : '';
+  const from = took ? ` · ${took.look} piece from ${Math.floor(took.time / 60)}:${(took.time % 60).toFixed(2).padStart(5, '0')} of the recording${took.pieces > 1 ? `, reading on through ${took.pieces} pieces` : ''}` : '';
   const hz = ev.clientY - r.top < SPEC_H ? ` · ${Math.round(8000 * (1 - (ev.clientY - r.top) / SPEC_H))} Hz` : '';
   $('readout').textContent = u ? `${t.toFixed(2)} s${hz} · ${u.kind === 'rest' ? `pause (${u.mark})` : `"${u.label}"  [${(u.phones ?? []).join(' ')}]  ${u.p0 >= 0 ? '+' : ''}${u.p0.toFixed(1)} → ${u.p1 >= 0 ? '+' : ''}${u.p1.toFixed(1)} st${u.reduced ? ' · swallowed' : ''}${u.stress ? ' · stressed' : ''}${from}`}` : `${t.toFixed(2)} s${hz}`;
 }
@@ -259,21 +259,27 @@ async function loadBankFile(file) {
     let loaded = null;
     try { loaded = decodeBank(bytes); } catch { /* not a bank: treat it as plain audio below */ }
     if (!loaded) {
-      note.textContent = `cutting ${file.name} into seconds and looking at each one…`;
+      note.textContent = `cutting ${file.name} into pieces and looking at each one…`;
       audio();
       const decoded = await ctx.decodeAudioData(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
       const mono = new Float32Array(decoded.length);
       for (let c = 0; c < decoded.numberOfChannels; c++) { const ch = decoded.getChannelData(c); for (let i = 0; i < mono.length; i++) mono[i] += ch[i] / decoded.numberOfChannels; }
       await new Promise((r) => setTimeout(r, 30)); // let the note paint before the long think
-      loaded = makeBank(mono, decoded.sampleRate, { name: file.name.replace(/[.][^.]+$/, ''), source: file.name });
+      loaded = makeBank(mono, decoded.sampleRate, { name: file.name.replace(/[.][^.]+$/, ''), source: file.name, segmentSeconds: Number($('bankCut').value) });
     }
-    bank = loaded;
-    $('bankUse').hidden = false;
-    $('bankSave').hidden = false;
-    $('bankOn').checked = true;
-    note.textContent = `${bank.name}: ${bank.segments.length} pieces — ${Object.entries(bank.looks).map(([k, v]) => `${v.length} ${k}`).join(', ')}. pitch is now tape speed (140 = as recorded).`;
-    changed();
+    useBank(loaded);
   } catch (e) { note.textContent = `could not use ${file.name}: ${e.message}`; }
+}
+
+function useBank(loaded) {
+  bank = loaded;
+  for (const id of ['bankCut', 'bankCutLabel', 'bankUse', 'bankSave']) $(id).hidden = false;
+  // a bank cut at some other length than the three on offer still shows truthfully
+  if (![...$('bankCut').options].some((o) => Number(o.value) === bank.segmentSeconds)) $('bankCut').append(new Option(`${bank.segmentSeconds} s`, String(bank.segmentSeconds)));
+  $('bankCut').value = String(bank.segmentSeconds);
+  $('bankOn').checked = true;
+  $('bankNote').textContent = `${bank.name}: ${bank.segments.length} pieces of ${bank.segmentSeconds} s — ${Object.entries(bank.looks).map(([k, v]) => `${v.length} ${k}`).join(', ')}. pitch is now tape speed (140 = as recorded).`;
+  changed();
 }
 
 // ------------------------------------------------------------------ wiring
@@ -304,6 +310,13 @@ function init() {
   $('bankPick').addEventListener('click', () => $('bankFile').click());
   $('bankFile').addEventListener('change', () => { const f = $('bankFile').files[0]; if (f) loadBankFile(f); $('bankFile').value = ''; });
   $('bankOn').addEventListener('change', () => changed());
+  $('bankCut').addEventListener('change', () => {
+    if (!bank) return;
+    const want = Number($('bankCut').value);
+    if (want === bank.segmentSeconds) return;
+    $('bankNote').textContent = 'un-arranging the recording and cutting it again…';
+    setTimeout(() => { try { useBank(recut(bank, want)); } catch (e) { $('bankNote').textContent = e.message; $('bankCut').value = String(bank.segmentSeconds); } }, 30);
+  });
   $('bankSave').addEventListener('click', () => { if (bank) download(`${slug(bank.name)}.bank.wav`, encodeBank(bank), 'audio/wav'); });
   $('roll').addEventListener('click', () => { const seed = Math.floor(Math.random() * 100000); $('preset').value = ''; audio(); setVoice(randomVoice(seed), `rolled from ${seed}`); });
 

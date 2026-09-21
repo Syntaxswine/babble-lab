@@ -58,7 +58,7 @@ export function parseScript(source) {
 export { makePlan, renderPlan, revealAt, revealSchedule, weightsMap };
 export { resolveVoice, randomVoice, compactVoice, PRESETS, PARAMS, FX_PARAMS, MODES, WAVES, DEFAULT_VOICE } from './voices.mjs';
 export { encodeWav, decodeWav } from './wav.mjs';
-export { makeBank, encodeBank, decodeBank } from './bank.mjs';
+export { makeBank, encodeBank, decodeBank, unarrange, recut, DEFAULT_PIECE } from './bank.mjs';
 export { makeTongue, applyTongue, MANNER_CLASSES } from './tongue.mjs';
 export { analyze, tokenize, countSyllables, wordToSyllables } from './text.mjs';
 export { g2p } from './g2p.mjs';

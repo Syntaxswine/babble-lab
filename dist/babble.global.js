@@ -2099,27 +2099,32 @@ return { VOICED_RMS, wave, finish, checkRate, renderPlan };
 })();
 // ---- src/sampler.mjs
 __m["src/sampler.mjs"] = (() => {
-// The other mouth: instead of synthesising each syllable, play a second of a
+// The other mouth: instead of synthesising each syllable, play a piece of a
 // recording that LOOKS like it. The plan is untouched — timing, melody,
 // emphasis, pauses and the text reveal all come from prosody.mjs exactly as for
 // the synth — only the sound inside each unit's slot changes.
 //
-// Which second? Two questions, both answered from the picture (look.mjs):
+// Which piece? Two questions, both answered from the picture (look.mjs):
 //
-//   how does the syllable OPEN?    a stop           -> a "struck" second (a vertical line)
-//     (its manner)                 a hiss           -> a "wash" second   (speckle)
-//                                  anything softer  -> a "tonal" second  (horizontal stripes)
+//   how does the syllable OPEN?    a stop           -> a "struck" piece (a vertical line)
+//     (its manner)                 a hiss           -> a "wash" piece   (grain)
+//                                  anything softer  -> a "tonal" piece  (horizontal stripes)
 //   how BRIGHT is its vowel?       "ee" has ink high in the picture, "oo" low;
-//     (its place)                  seconds within a look are ordered by ink height,
+//     (its place)                  pieces within a look are ordered by ink height,
 //                                  so the vowel's F2 picks how far along to reach
 //
 // Manner chooses the look, place chooses within it: the tongue's rule again.
 // A small hash(word, syllable) nudge keeps one vowel from always being the same
-// second, while the same word still always comes out the same.
+// piece, while the same word still always comes out the same.
+//
+// The piece only says where to START. From there the read follows the ORIGINAL
+// recording, straight through into whatever piece came next in it — so a
+// syllable longer than a quarter-second piece does not fall silent or loop, and
+// a pluck caught at the end of its piece keeps its own decay.
 //
 // Pitch is tape speed: voice.pitch 140 plays the recording as it is, 280 an
 // octave up and twice as fast. The melody of the line (a question's rise) bends
-// that speed, which is audible even in chords. A struck second is read from
+// that speed, which is audible even in chords. A struck piece is read from
 // just before its edge, so the hit lands on the syllable.
 
 const { PHONEMES } = __m["src/phonemes.mjs"];
@@ -2155,9 +2160,24 @@ function chooseSegment(bank, unit, wordText, k) {
   return pool[clamp(Math.round(brightnessOf(unit) * (n - 1) + nudge), 0, n - 1)];
 }
 
-// two cascaded RBJ low-passes over a copy: keeps a sped-up read from aliasing
-function lowpassed(x, fc, sr) {
-  const y = Float32Array.from(x);
+// Samples [a, b) of the recording AS IT WAS, gathered back from the arranged pieces.
+function originalSpan(bank, a, b) {
+  const len = bank.pieceLength;
+  const out = new Float32Array(Math.max(0, b - a));
+  for (let j = Math.max(a, 0); j < b;) {
+    const o = Math.floor(j / len);
+    const si = o < bank.byOrigin.length ? bank.byOrigin[o] : -1;
+    const off = j - o * len;
+    const n = Math.min(len - off, b - j);
+    if (si >= 0) out.set(bank.segments[si].samples.subarray(off, off + n), j - a);
+    else if (o >= bank.byOrigin.length) break; // past the end of the recording: silence
+    j += n;
+  }
+  return out;
+}
+
+// two cascaded RBJ low-passes, in place: keeps a sped-up read from aliasing
+function lowpass(y, fc, sr) {
   const w = (2 * Math.PI * fc) / sr, c = Math.cos(w), al = Math.sin(w) / (2 * 0.7071), a0 = 1 + al;
   const b0 = (1 - c) / 2 / a0, b1 = (1 - c) / a0, a1 = (-2 * c) / a0, a2 = (1 - al) / a0;
   for (let pass = 0; pass < 2; pass++) {
@@ -2172,6 +2192,8 @@ function synthesizeFromBank(plan, bank, sr) {
   const out = new Float32Array(Math.ceil((plan.duration + 0.04) * sr));
   const base = v.pitch / NATIVE_HZ;
   const srcRate = bank.sampleRate;
+  const len = bank.pieceLength;
+  const recorded = bank.segments.length * len;
   const vibW = (2 * Math.PI * v.vibRate) / sr;
   const perWord = new Map();
   const used = [];
@@ -2185,38 +2207,42 @@ function synthesizeFromBank(plan, bank, sr) {
     const look = seg.look;
     const dur = u.t1 - u.t0;
     const n = Math.floor(dur * sr);
+    const topRate = base * Math.pow(2, (Math.max(u.p0, u.p1) + v.vibDepth) / 12);
     const meanRate = base * Math.pow(2, (u.p0 + u.p1) / 24);
-    const need = meanRate * dur; // seconds of recording this slot will read
-    const segSeconds = seg.samples.length / srcRate;
-    let start = look === 'struck' ? seg.cue - 0.004 : seg.body;
-    start = clamp(Math.min(start, segSeconds - need), 0, Math.max(0, segSeconds - 0.02));
+
+    // where in the ORIGINAL recording this unit starts reading, and how much of it it may need
+    const startIn = Math.max(0, look === 'struck' ? seg.cue - 0.004 : seg.body);
+    const startAbs = seg.origin * len + Math.round(startIn * srcRate);
+    const a = Math.max(0, startAbs - 2);
+    const b = Math.min(recorded, startAbs + Math.ceil(topRate * dur * srcRate) + 8);
+    const src = originalSpan(bank, a, b);
     const step0 = (meanRate * srcRate) / sr;
-    const src = step0 > 1.05 ? lowpassed(seg.samples, (0.45 * srcRate) / step0, srcRate) : seg.samples;
+    if (step0 > 1.05) lowpass(src, (0.45 * srcRate) / step0, srcRate);
 
     const attack = Math.max(1, Math.floor((look === 'struck' ? 0.002 : 0.012) * sr));
     const release = Math.max(1, Math.floor(Math.min(0.03, dur * 0.35) * sr));
     const gain = u.amp * seg.gain;
     const o0 = Math.floor(u.t0 * sr);
-    let pos = start * srcRate;
+    let pos = startAbs - a;
     for (let i = 0; i < n && o0 + i < out.length; i++) {
       const st = u.p0 + ((u.p1 - u.p0) * i) / n + (v.vibDepth > 0 ? v.vibDepth * Math.sin(vibW * (o0 + i)) : 0);
       const j = Math.floor(pos);
-      if (j + 2 >= src.length) break; // ran out of second: the unit simply ends early
+      if (j + 2 >= src.length) break; // the recording itself ran out: the unit ends early
       // 4-point Hermite
       const f = pos - j, xm = src[j > 0 ? j - 1 : 0], x0 = src[j], x1 = src[j + 1], x2 = src[j + 2];
       const c1 = 0.5 * (x1 - xm), c2 = xm - 2.5 * x0 + 2 * x1 - 0.5 * x2, c3 = 0.5 * (x2 - xm) + 1.5 * (x0 - x1);
       const s = ((c3 * f + c2) * f + c1) * f + x0;
-      const left = (src.length - 2 - pos) / (base * srcRate / sr); // output samples until the recording runs out
+      const left = (src.length - 2 - pos) / ((base * srcRate) / sr); // output samples until the recording runs out
       const env = Math.min(1, i / attack, (n - i) / release, Math.max(0, left) / release);
       out[o0 + i] += s * gain * env;
       pos += (base * Math.pow(2, st / 12) * srcRate) / sr;
     }
-    used.push({ unit: plan.units.indexOf(u), segment: segIndex, look, second: seg.second, start });
+    used.push({ unit: plan.units.indexOf(u), segment: segIndex, look, origin: seg.origin, time: startAbs / srcRate, pieces: Math.floor((a + Math.min(pos, src.length)) / len) - seg.origin + 1 });
   }
   return { samples: out, used };
 }
 
-return { lookFor, brightnessOf, chooseSegment, synthesizeFromBank };
+return { lookFor, brightnessOf, chooseSegment, originalSpan, synthesizeFromBank };
 })();
 // ---- src/wav.mjs
 __m["src/wav.mjs"] = (() => {
@@ -2324,8 +2350,9 @@ __m["src/look.mjs"] = (() => {
 //   - "speckle" as spectral flatness called dull, low-passed hiss tonal, because a
 //     band of noise low in the picture is a dark horizontal band. What separates
 //     hiss from a held note is not where the ink is but its GRAIN: along a row, a
-//     note is a smooth line and noise flickers. So speckle is the flicker of each
-//     row around its own running median.
+//     note is a smooth line and noise flickers. So speckle is each cell's flicker
+//     against its near neighbours in the row (see the note where it is computed:
+//     the first version of THAT was wrong too, at quarter-second pieces).
 //
 // Stripe direction is the median-filter trick from harmonic/percussive
 // separation (Fitzgerald 2010): a median taken ALONG time keeps horizontal
@@ -2398,7 +2425,7 @@ function lookAt(pic, exposure) {
   // --- stripe direction
   const K = 8; // half-width of both medians: 17 frames (~136 ms) and 17 bins
   const buf = new Float64Array(2 * K + 1);
-  let hor = 0, ver = 0, grain = 0, grainWeight = 0;
+  let hor = 0, ver = 0;
   for (let t = 0; t < frames; t++) for (let f = lo; f < bins; f++) {
     let n = 0;
     for (let k = Math.max(0, t - K); k <= Math.min(frames - 1, t + K); k++) buf[n++] = mag[k * bins + f];
@@ -2407,12 +2434,22 @@ function lookAt(pic, exposure) {
     for (let k = Math.max(lo, f - K); k <= Math.min(bins - 1, f + K); k++) buf[n++] = mag[t * bins + k];
     const p = median(buf, n);
     hor += h * h; ver += p * p;
-    // grain: how far this cell sits from its row's running median, weighted by that median (where
-    // the ink is). Bounded at twice the median: steady noise rarely strays further, while the
-    // cells of one loud click stray a hundredfold — and one event is not a texture.
-    if (h > exposure * 1e-3) { grain += Math.min(Math.abs(mag[t * bins + f] - h), 2 * h); grainWeight += h; }
   }
   const tonal = hor + ver > 0 ? hor / (hor + ver) : 0;
+
+  // --- grain: FLICKER along a row. Each cell against the mean of its neighbours two columns
+  // either side (two, because adjacent columns share 75 % of their samples and flicker together).
+  // A note is a smooth line however fast it swells or dies — its cell sits between its
+  // neighbours — while noise jumps about. The first version measured distance from a long
+  // running median instead, and at quarter-second pieces a tone's own fade-in and fade-out
+  // counted as grain: 7 of 12 hiss pieces in the fixture were outranked by tones and read as tonal.
+  // Bounded at twice the neighbours' mean: the cells of one loud click stray a hundredfold,
+  // and one event is not a texture.
+  let grain = 0, grainWeight = 0;
+  for (let t = 2; t < frames - 2; t++) for (let f = lo; f < bins; f++) {
+    const m = (mag[(t - 2) * bins + f] + mag[(t + 2) * bins + f]) / 2;
+    if (m > exposure * 1e-3) { grain += Math.min(Math.abs(mag[t * bins + f] - m), 2 * m); grainWeight += m; }
+  }
   const speckle = grainWeight > 0 ? grain / grainWeight : 0;
 
   // --- the sharpest vertical line: positive change from one column to the next
@@ -2448,8 +2485,8 @@ function lookAt(pic, exposure) {
   }
   const change = na > 0 && nb > 0 ? 1 - dot / Math.sqrt(na * nb) : 0;
 
-  // the loudest 200 ms stretch: where a held note is best read from
-  const win = Math.max(1, Math.round(0.2 / secondsPerFrame));
+  // the loudest stretch (200 ms, or 40 % of a short piece): where a held note is best read from
+  const win = Math.max(1, Math.round(Math.min(0.2, 0.4 * frames * secondsPerFrame) / secondsPerFrame));
   const energy = new Float64Array(frames);
   for (let t = 0; t < frames; t++) { let s = 0; for (let f = lo; f < bins; f++) s += mag[t * bins + f] ** 2; energy[t] = s; }
   let best = 0, run = 0, bestAt = 0;
@@ -2507,39 +2544,61 @@ function thumbnail(pic, exposure, width, height) {
 //   tonal    horizontal stripes                  -> everything that opens softly
 //   quiet    hardly any ink                      -> not used
 //
-// Scores are relative to the recording itself, because "a sharp edge" in a harp
-// piece and in a drum track are different numbers: each measure is taken as
-// how many TIMES its typical value it is (a log-ratio to the recording's median),
-// scaled by how far that measure ranges in this recording (its 10th..90th
-// percentile, in logs). Median-and-spread z-scores were tried first and broke on
-// a recording made of distinct populations, where "the spread around the
-// median" describes none of them.
-// Within a look, seconds are ordered by HEIGHT: ink low in the picture first.
+// The bars are relative to the recording itself, because "a sharp edge" in a
+// harp piece and in a drum track are different numbers. Each bar is put at the
+// NATURAL BREAK in that measure across the recording — Otsu's threshold on its
+// logarithm: the split that best separates a low group from a high group.
+//     struck   edge above the break in edge
+//     else     wash if grain is above the break in grain, tonal if below
+// Two median-based schemes came first and both failed on the synthetic recording,
+// for one reason: anything measured against "the recording's median" goes blind
+// whenever a whole population SITS on the median. A third of the fixture is hiss,
+// so the median grain WAS the hiss, every hiss piece scored 0.00 for "wash" and
+// 0.00 for "tonal", and rounding error chose between them. A break between groups
+// does not care where the median falls.
+// Within a look, pieces are ordered by HEIGHT: ink low in the picture first.
 // ---------------------------------------------------------------------------
 const LOOKS = ['tonal', 'struck', 'wash'];
 
 function arrange(looks, { minPerLook = 4 } = {}) {
   const n = looks.length;
   if (!n) throw new Error('look: nothing to arrange');
-  const FLOOR = 1e-4;
-  const stat = (key, pool) => {
-    const v = pool.map((l) => Math.log(Math.max(l[key], FLOOR))).sort((a, b) => a - b);
-    const at = (q) => v[Math.min(v.length - 1, Math.floor(q * v.length))];
-    return { med: at(0.5), range: Math.max(at(0.9) - at(0.1), 0.05) };
+  // Logs, floored at a hundredth of the recording's own largest value. Without the floor a
+  // perfectly steady tone (edge exactly 0) sits at minus infinity, and the "natural break"
+  // becomes the gap between nothing and almost nothing: a difference a hundred times smaller
+  // than the biggest one in the picture is not a visible difference.
+  const floorOf = {};
+  const lg = (l, key) => Math.log(Math.max(l[key], floorOf[key]));
+  // Otsu: sort, try every split, keep the one with the greatest between-group variance
+  const breakIn = (key, pool) => {
+    const v = pool.map((l) => lg(l, key)).sort((a, b) => a - b);
+    const total = v.reduce((a, b) => a + b, 0);
+    let best = -1, at = v[v.length >> 1], low = 0;
+    for (let k = 1; k < v.length; k++) {
+      low += v[k - 1];
+      if (v[k] === v[k - 1]) continue;
+      const w0 = k / v.length, w1 = 1 - w0, d = low / k - (total - low) / (v.length - k);
+      const between = w0 * w1 * d * d;
+      if (between > best) { best = between; at = (v[k - 1] + v[k]) / 2; }
+    }
+    return at;
   };
   // the picture's black point is already this recording's own (exposureOf), so an
   // absolute bar is a relative one: nothing darker than ~50 dB below the loudest moments
   const QUIET_BAR = 0.3;
   const speaking = looks.filter((l) => l.inkMax >= QUIET_BAR);
-  if (speaking.length < LOOKS.length * minPerLook) throw new Error(`look: only ${speaking.length} of ${n} seconds have enough ink to speak with; need at least ${LOOKS.length * minPerLook}`);
+  if (speaking.length < LOOKS.length * minPerLook) throw new Error(`look: only ${speaking.length} of ${n} pieces have enough ink to speak with; need at least ${LOOKS.length * minPerLook}`);
 
-  const S = { edge: stat('edge', speaking), speckle: stat('speckle', speaking) };
-  const z = (l, key) => (Math.log(Math.max(l[key], FLOOR)) - S[key].med) / S[key].range;
+  for (const key of ['edge', 'speckle']) floorOf[key] = Math.max(1e-9, 0.01 * Math.max(...speaking.map((l) => l[key])));
+  const edgeBar = breakIn('edge', speaking);
+  // a click flickers too, so the grain break is looked for among the pieces that are NOT struck
+  const unstruck = speaking.filter((l) => lg(l, 'edge') < edgeBar);
+  const grainBar = breakIn('speckle', unstruck.length >= 2 ? unstruck : speaking);
   const out = looks.map((l, index) => {
     if (l.inkMax < QUIET_BAR) return { ...l, index, look: 'quiet' };
-    // grainy -> wash, smooth -> tonal, and either way a thin line that stands out further than that -> struck
-    const score = { struck: z(l, 'edge'), wash: z(l, 'speckle'), tonal: -z(l, 'speckle') };
-    const look = LOOKS.reduce((a, b) => (score[b] > score[a] ? b : a));
+    // how far past each bar, in log units (used only to lend pieces to a look that came up short)
+    const score = { struck: lg(l, 'edge') - edgeBar, wash: lg(l, 'speckle') - grainBar, tonal: grainBar - lg(l, 'speckle') };
+    const look = score.struck >= 0 ? 'struck' : score.wash >= 0 ? 'wash' : 'tonal';
     return { ...l, index, look, score };
   });
   // a look nobody won outright still needs members: take the best-scoring from the largest look
@@ -2561,30 +2620,37 @@ return { picture, lookAt, refineCue, exposureOf, thumbnail, LOOKS, arrange };
 })();
 // ---- src/bank.mjs
 __m["src/bank.mjs"] = (() => {
-// A voice bank: a recording cut into equal segments and arranged by how each
+// A voice bank: a recording cut into equal pieces and arranged by how each
 // one LOOKS (look.mjs). It is one file, and that file is an ordinary WAV —
 //
 //   play it      and you hear the arrangement: the recording re-ordered look by
 //                look, dull to bright within each
-//   load it      and the 'bblb' chunk inside says which second is which, so a
+//   load it      and the 'bblb' chunk inside says which piece is which, so a
 //                voice can speak with it (sampler.mjs)
 //
 // PCM, not mp3/ogg, on purpose: compressed decoders differ between platforms,
 // and "same text, same voice -> same samples" has to hold for bank voices too.
+//
+// Every piece remembers its `origin` — its place in the recording before it was
+// arranged. That is what lets a syllable longer than a piece keep reading into
+// the piece that FOLLOWED it in the recording (the pluck keeps its own decay),
+// and what lets a bank be un-arranged and cut again at another length.
 
 const { encodeWav, decodeWav } = __m["src/wav.mjs"];
 const { picture, lookAt, exposureOf, arrange, refineCue, LOOKS } = __m["src/look.mjs"];
 
-const BANK_RMS = 0.14; // what every segment is levelled toward: the synth's own vowel level
+const BANK_RMS = 0.14; // what every piece is levelled toward: the synth's own vowel level
+const DEFAULT_PIECE = 0.25; // seconds
 const CHUNK = 'bblb';
 
 const rmsOf = (x) => { let s = 0; for (let i = 0; i < x.length; i++) s += x[i] * x[i]; return Math.sqrt(s / Math.max(1, x.length)); };
 
-// samples (mono Float32Array) -> a bank object, segments in arranged order
-function makeBank(samples, sampleRate, { name = 'bank', segmentSeconds = 1, source = null, note = null } = {}) {
+// samples (mono Float32Array) -> a bank object, pieces in arranged order
+function makeBank(samples, sampleRate, { name = 'bank', segmentSeconds = DEFAULT_PIECE, source = null, note = null } = {}) {
+  if (!(segmentSeconds >= 0.1 && segmentSeconds <= 10)) throw new Error(`bank: pieces of ${segmentSeconds} s cannot be looked at (0.1 .. 10 s can)`);
   const len = Math.round(segmentSeconds * sampleRate);
   const count = Math.floor(samples.length / len);
-  if (count < 12) throw new Error(`bank: ${(samples.length / sampleRate).toFixed(1)} s of audio makes ${count} segments of ${segmentSeconds} s; need at least 12`);
+  if (count < 12) throw new Error(`bank: ${(samples.length / sampleRate).toFixed(1)} s of audio makes ${count} pieces of ${segmentSeconds} s; need at least 12`);
   const pics = [];
   for (let k = 0; k < count; k++) pics.push(picture(samples, sampleRate, k * len, len));
   const exposure = exposureOf(pics);
@@ -2594,10 +2660,12 @@ function makeBank(samples, sampleRate, { name = 'bank', segmentSeconds = 1, sour
     const pcm = samples.subarray(l.index * len, (l.index + 1) * len);
     const level = rmsOf(pcm);
     return {
-      samples: pcm, look: l.look, second: l.index, // `second`: where it sat in the original recording
+      samples: pcm, look: l.look, origin: l.index,
       ink: round(l.ink), inkMax: round(l.inkMax), height: round(l.height), tonal: round(l.tonal), edge: round(l.edge), edges: l.edges,
       speckle: round(l.speckle), change: round(l.change), cue: round(refineCue(pcm, sampleRate, l.cue), 3), body: round(l.body, 3),
-      gain: round(level > 1e-5 ? Math.min(4, Math.max(0.25, BANK_RMS / level)) : 0, 3),
+      // levelled toward BANK_RMS, by at most 18 dB up: measured on the Glades score, a 12 dB cap left
+      // its fade-in pieces 5-9 dB under everything else, and the dull end of "tonal" is where they sit
+      gain: round(level > 1e-5 ? Math.min(8, Math.max(0.25, BANK_RMS / level)) : 0, 3),
     };
   });
   return finishBank({ name, source, note, sampleRate, segmentSeconds, exposure, segments });
@@ -2606,12 +2674,29 @@ function makeBank(samples, sampleRate, { name = 'bank', segmentSeconds = 1, sour
 function finishBank(bank) {
   bank.looks = Object.fromEntries([...LOOKS, 'quiet'].map((k) => [k, []]));
   bank.segments.forEach((s, i) => bank.looks[s.look]?.push(i));
-  for (const k of LOOKS) if (!bank.looks[k].length) throw new Error(`bank "${bank.name}": no "${k}" segments — it cannot speak`);
+  for (const k of LOOKS) if (!bank.looks[k].length) throw new Error(`bank "${bank.name}": no "${k}" pieces — it cannot speak`);
+  // origin -> where that piece now sits, so a read can follow the recording across pieces
+  bank.byOrigin = new Int32Array(bank.segments.length).fill(-1);
+  bank.segments.forEach((s, i) => { if (s.origin >= 0 && s.origin < bank.byOrigin.length) bank.byOrigin[s.origin] = i; });
+  bank.pieceLength = bank.segments[0].samples.length;
   return bank;
 }
 
+// The recording as it was (less the tail that did not fill a last piece).
+function unarrange(bank) {
+  const len = bank.pieceLength;
+  const out = new Float32Array(len * bank.segments.length);
+  for (const s of bank.segments) out.set(s.samples, s.origin * len);
+  return out;
+}
+
+// The same recording, cut at another length and arranged afresh.
+function recut(bank, segmentSeconds) {
+  return makeBank(unarrange(bank), bank.sampleRate, { name: bank.name, source: bank.source, note: bank.note, segmentSeconds });
+}
+
 function encodeBank(bank) {
-  const len = bank.segments[0].samples.length;
+  const len = bank.pieceLength;
   const all = new Float32Array(len * bank.segments.length);
   bank.segments.forEach((s, i) => all.set(s.samples, i * len));
   const index = {
@@ -2627,16 +2712,17 @@ function decodeBank(bytes) {
   if (!raw) throw new Error('bank: this WAV has no babble-lab index in it — make one with "babble bank <audio>"');
   let index;
   try { index = JSON.parse(new TextDecoder().decode(raw)); } catch { throw new Error('bank: the index inside this WAV is not readable'); }
-  if (index.babbleBank !== 1 || !Array.isArray(index.segments)) throw new Error('bank: unknown bank format');
+  if (index.babbleBank !== 1 || !Array.isArray(index.segments) || !index.segments.length) throw new Error('bank: unknown bank format');
   const len = Math.round(index.segmentSeconds * wav.sampleRate);
-  if (index.segments.length * len > wav.samples.length) throw new Error(`bank: index lists ${index.segments.length} segments but the audio holds ${Math.floor(wav.samples.length / len)}`);
+  if (index.segments.length * len > wav.samples.length) throw new Error(`bank: index lists ${index.segments.length} pieces but the audio holds ${Math.floor(wav.samples.length / len)}`);
   return finishBank({
     name: index.name, source: index.source, note: index.note, sampleRate: wav.sampleRate, segmentSeconds: index.segmentSeconds, exposure: index.exposure,
-    segments: index.segments.map((s, i) => ({ ...s, samples: wav.samples.subarray(i * len, (i + 1) * len) })),
+    // `second` is what the first banks (one-second pieces) called `origin`
+    segments: index.segments.map(({ second, ...s }, i) => ({ ...s, origin: s.origin ?? second, samples: wav.samples.subarray(i * len, (i + 1) * len) })),
   });
 }
 
-return { BANK_RMS, makeBank, encodeBank, decodeBank };
+return { BANK_RMS, DEFAULT_PIECE, makeBank, unarrange, recut, encodeBank, decodeBank };
 })();
 // ---- src/index.mjs
 __m["src/index.mjs"] = (() => {
@@ -2706,7 +2792,7 @@ function parseScript(source) {
 
 
 
-return { plan, render, renderScript, parseScript, makePlan, renderPlan, revealAt, revealSchedule, weightsMap, resolveVoice: __m["src/voices.mjs"].resolveVoice, randomVoice: __m["src/voices.mjs"].randomVoice, compactVoice: __m["src/voices.mjs"].compactVoice, PRESETS: __m["src/voices.mjs"].PRESETS, PARAMS: __m["src/voices.mjs"].PARAMS, FX_PARAMS: __m["src/voices.mjs"].FX_PARAMS, MODES: __m["src/voices.mjs"].MODES, WAVES: __m["src/voices.mjs"].WAVES, DEFAULT_VOICE: __m["src/voices.mjs"].DEFAULT_VOICE, encodeWav: __m["src/wav.mjs"].encodeWav, decodeWav: __m["src/wav.mjs"].decodeWav, makeBank: __m["src/bank.mjs"].makeBank, encodeBank: __m["src/bank.mjs"].encodeBank, decodeBank: __m["src/bank.mjs"].decodeBank, makeTongue: __m["src/tongue.mjs"].makeTongue, applyTongue: __m["src/tongue.mjs"].applyTongue, MANNER_CLASSES: __m["src/tongue.mjs"].MANNER_CLASSES, analyze: __m["src/text.mjs"].analyze, tokenize: __m["src/text.mjs"].tokenize, countSyllables: __m["src/text.mjs"].countSyllables, wordToSyllables: __m["src/text.mjs"].wordToSyllables, g2p: __m["src/g2p.mjs"].g2p, PHONEMES: __m["src/phonemes.mjs"].PHONEMES, respell: __m["src/phonemes.mjs"].respell };
+return { plan, render, renderScript, parseScript, makePlan, renderPlan, revealAt, revealSchedule, weightsMap, resolveVoice: __m["src/voices.mjs"].resolveVoice, randomVoice: __m["src/voices.mjs"].randomVoice, compactVoice: __m["src/voices.mjs"].compactVoice, PRESETS: __m["src/voices.mjs"].PRESETS, PARAMS: __m["src/voices.mjs"].PARAMS, FX_PARAMS: __m["src/voices.mjs"].FX_PARAMS, MODES: __m["src/voices.mjs"].MODES, WAVES: __m["src/voices.mjs"].WAVES, DEFAULT_VOICE: __m["src/voices.mjs"].DEFAULT_VOICE, encodeWav: __m["src/wav.mjs"].encodeWav, decodeWav: __m["src/wav.mjs"].decodeWav, makeBank: __m["src/bank.mjs"].makeBank, encodeBank: __m["src/bank.mjs"].encodeBank, decodeBank: __m["src/bank.mjs"].decodeBank, unarrange: __m["src/bank.mjs"].unarrange, recut: __m["src/bank.mjs"].recut, DEFAULT_PIECE: __m["src/bank.mjs"].DEFAULT_PIECE, makeTongue: __m["src/tongue.mjs"].makeTongue, applyTongue: __m["src/tongue.mjs"].applyTongue, MANNER_CLASSES: __m["src/tongue.mjs"].MANNER_CLASSES, analyze: __m["src/text.mjs"].analyze, tokenize: __m["src/text.mjs"].tokenize, countSyllables: __m["src/text.mjs"].countSyllables, wordToSyllables: __m["src/text.mjs"].wordToSyllables, g2p: __m["src/g2p.mjs"].g2p, PHONEMES: __m["src/phonemes.mjs"].PHONEMES, respell: __m["src/phonemes.mjs"].respell };
 })();
 // ---- src/runtime.mjs
 __m["src/runtime.mjs"] = (() => {

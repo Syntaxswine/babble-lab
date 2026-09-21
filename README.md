@@ -147,8 +147,9 @@ swallowed in every tongue.
 
 ## Speaking with a recording: voice banks
 
-The synth is one mouth. The other is a **bank**: any recording, cut into
-one-second pieces and *arranged by how each piece looks*.
+The synth is one mouth. The other is a **bank**: any recording, cut into equal
+pieces — a **quarter of a second** each unless you say otherwise — and *arranged
+by how each piece looks*.
 
 ```bash
 node bin/babble.mjs bank song.mp3 -o banks/song.bank.wav
@@ -159,9 +160,11 @@ node bin/babble.mjs "Who goes there?" --bank banks/song.bank.wav --set pitch=280
 ```
 
 In the workbench: **load audio…** takes a bank made earlier *or any audio file*,
-which it cuts and arranges in the page (a four-minute song takes ~8 s).
+which it cuts and arranges in the page (a four-minute song takes ~8 s). **cut**
+switches between whole-, half- and quarter-second pieces; changing it un-arranges
+the recording and cuts it again. `--segment 0.5` does the same on the command line.
 
-"How it looks" is literal. Every second's spectrogram is measured as a picture
+"How it looks" is literal. Every piece's spectrogram is measured as a picture
 (`src/look.mjs`) — how dark its darkest pixels are, where the ink sits from
 bottom to top, how far its sharpest *thin vertical line* stands out, how *grainy*
 the ink is along each row — and sorted into three looks a voice can use:
@@ -180,6 +183,16 @@ within it* — the tongue's rule, applied to somebody else's audio. A small
 `hash(word, syllable)` nudge keeps one vowel from always being the same second;
 the same word still always comes out the same.
 
+**The piece only says where to start.** From there the read follows the
+*original* recording, straight into whatever piece came next in it. A quarter of a
+second is shorter than many syllables, and the alternatives are all worse: falling
+silent, looping, or jumping to whatever piece happens to sit next in the arranged
+order. This way a long syllable simply plays more of the song, and a pluck caught
+at the end of its piece keeps its own decay. (Tested on a recording that climbs 20 Hz
+every quarter second: 0.06, 0.20 and 0.34 s into a long syllable, the pitch heard is
+the pitch the recording holds there, to 3 %.) Every piece remembers its `origin`, so
+a bank can also be un-arranged and cut again at another length.
+
 Everything else is unchanged, because the plan never knew what mouth it had:
 timing, pauses, emphasis and the text reveal are identical. **Pitch becomes tape
 speed** (`140` plays the recording as it is, `280` an octave up and twice as
@@ -190,18 +203,40 @@ lands on the syllable.
 
 The bank is **one file, and an ordinary WAV**: play it and you hear the
 recording re-arranged look by look; load it and the index inside (a `bblb` RIFF
-chunk) says which second is which. Beside it goes `<name>.sheet.png`, every
+chunk) says which piece is which. Beside it goes `<name>.sheet.png`, every
 piece's picture in arranged order — the way to check the arrangement by eye.
 It is PCM on purpose: compressed decoders differ between platforms, and "same in,
 same samples out" has to hold for bank voices too.
 
-The looking was wrong three times before it was right, and each time a
+The looking was wrong **six** times before it was right, and every time a
 *synthetic recording with known contents* caught it (held tones, clicks at known
-instants, hiss, silence, shuffled — `test/bank.test.mjs`); the real song had
-hidden all three. A lone click on a pale ground was called quiet (mean ink);
-a tone fading in was called struck (any darkening, where a strike is a *thin*
-line); dull hiss was called tonal (a band of noise low in the picture *is* a dark
-horizontal band — what separates it from a held note is its grain).
+instants, hiss, silence, shuffled, built at one second and again at a quarter —
+`test/bank.test.mjs`); the real song hid all six behind a plausible-looking sheet.
+
+- A lone click on a pale ground was called quiet (mean ink), then a loud pure tone
+  was (darkest *columns*). Now: darkest *pixels*.
+- A tone fading in was called struck (any darkening). A strike is a *thin* line:
+  each column's darkening, less its neighbours'.
+- Dull hiss was called tonal: a band of noise low in the picture *is* a dark
+  horizontal band. What separates it from a held note is **grain**.
+- Grain as distance from a long running median worked at one second and failed at a
+  quarter, where a tone's own fade-in and fade-out counted as grain. Grain is
+  *flicker*: each cell against its neighbours two columns either side.
+- Sorting by "how far from the recording's median" goes blind whenever a whole
+  population **sits on the median**: a third of the fixture is hiss, so the median
+  grain *was* the hiss, every hiss piece scored 0.00 for wash and 0.00 for tonal, and
+  rounding error chose. The bars are now put at the **natural break** in each
+  measure (Otsu's threshold on its logarithm).
+- Logs of exact zeros: a perfectly steady tone has an edge of 0, which on a log
+  scale is infinitely far from everything, and *that* gap became the natural break.
+  Values are floored at a hundredth of the recording's largest.
+
+On the Glades of Arcadia score (913 quarter-second pieces): 138 tonal, 590 struck,
+175 wash, 10 quiet. Struck dominates honestly — the song's pulse is one hit every
+0.30 s (measured from its onset envelope; ~99 BPM in eighth notes), so about five
+quarter-second windows in six contain one. A quarter of a second is *not* a note of
+this song: cutting on its own eighth note would be `--segment 0.302`, and cutting
+*on the beat* rather than on the clock is the obvious next step.
 
 **Banks are not committed.** A bank is a derivative of its recording and carries
 that recording's licence, not this repository's. `banks/` is gitignored; the

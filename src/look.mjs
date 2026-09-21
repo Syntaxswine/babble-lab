@@ -23,8 +23,9 @@
 //   - "speckle" as spectral flatness called dull, low-passed hiss tonal, because a
 //     band of noise low in the picture is a dark horizontal band. What separates
 //     hiss from a held note is not where the ink is but its GRAIN: along a row, a
-//     note is a smooth line and noise flickers. So speckle is the flicker of each
-//     row around its own running median.
+//     note is a smooth line and noise flickers. So speckle is each cell's flicker
+//     against its near neighbours in the row (see the note where it is computed:
+//     the first version of THAT was wrong too, at quarter-second pieces).
 //
 // Stripe direction is the median-filter trick from harmonic/percussive
 // separation (Fitzgerald 2010): a median taken ALONG time keeps horizontal
@@ -97,7 +98,7 @@ export function lookAt(pic, exposure) {
   // --- stripe direction
   const K = 8; // half-width of both medians: 17 frames (~136 ms) and 17 bins
   const buf = new Float64Array(2 * K + 1);
-  let hor = 0, ver = 0, grain = 0, grainWeight = 0;
+  let hor = 0, ver = 0;
   for (let t = 0; t < frames; t++) for (let f = lo; f < bins; f++) {
     let n = 0;
     for (let k = Math.max(0, t - K); k <= Math.min(frames - 1, t + K); k++) buf[n++] = mag[k * bins + f];
@@ -106,12 +107,22 @@ export function lookAt(pic, exposure) {
     for (let k = Math.max(lo, f - K); k <= Math.min(bins - 1, f + K); k++) buf[n++] = mag[t * bins + k];
     const p = median(buf, n);
     hor += h * h; ver += p * p;
-    // grain: how far this cell sits from its row's running median, weighted by that median (where
-    // the ink is). Bounded at twice the median: steady noise rarely strays further, while the
-    // cells of one loud click stray a hundredfold — and one event is not a texture.
-    if (h > exposure * 1e-3) { grain += Math.min(Math.abs(mag[t * bins + f] - h), 2 * h); grainWeight += h; }
   }
   const tonal = hor + ver > 0 ? hor / (hor + ver) : 0;
+
+  // --- grain: FLICKER along a row. Each cell against the mean of its neighbours two columns
+  // either side (two, because adjacent columns share 75 % of their samples and flicker together).
+  // A note is a smooth line however fast it swells or dies — its cell sits between its
+  // neighbours — while noise jumps about. The first version measured distance from a long
+  // running median instead, and at quarter-second pieces a tone's own fade-in and fade-out
+  // counted as grain: 7 of 12 hiss pieces in the fixture were outranked by tones and read as tonal.
+  // Bounded at twice the neighbours' mean: the cells of one loud click stray a hundredfold,
+  // and one event is not a texture.
+  let grain = 0, grainWeight = 0;
+  for (let t = 2; t < frames - 2; t++) for (let f = lo; f < bins; f++) {
+    const m = (mag[(t - 2) * bins + f] + mag[(t + 2) * bins + f]) / 2;
+    if (m > exposure * 1e-3) { grain += Math.min(Math.abs(mag[t * bins + f] - m), 2 * m); grainWeight += m; }
+  }
   const speckle = grainWeight > 0 ? grain / grainWeight : 0;
 
   // --- the sharpest vertical line: positive change from one column to the next
@@ -147,8 +158,8 @@ export function lookAt(pic, exposure) {
   }
   const change = na > 0 && nb > 0 ? 1 - dot / Math.sqrt(na * nb) : 0;
 
-  // the loudest 200 ms stretch: where a held note is best read from
-  const win = Math.max(1, Math.round(0.2 / secondsPerFrame));
+  // the loudest stretch (200 ms, or 40 % of a short piece): where a held note is best read from
+  const win = Math.max(1, Math.round(Math.min(0.2, 0.4 * frames * secondsPerFrame) / secondsPerFrame));
   const energy = new Float64Array(frames);
   for (let t = 0; t < frames; t++) { let s = 0; for (let f = lo; f < bins; f++) s += mag[t * bins + f] ** 2; energy[t] = s; }
   let best = 0, run = 0, bestAt = 0;
@@ -206,39 +217,61 @@ export function thumbnail(pic, exposure, width, height) {
 //   tonal    horizontal stripes                  -> everything that opens softly
 //   quiet    hardly any ink                      -> not used
 //
-// Scores are relative to the recording itself, because "a sharp edge" in a harp
-// piece and in a drum track are different numbers: each measure is taken as
-// how many TIMES its typical value it is (a log-ratio to the recording's median),
-// scaled by how far that measure ranges in this recording (its 10th..90th
-// percentile, in logs). Median-and-spread z-scores were tried first and broke on
-// a recording made of distinct populations, where "the spread around the
-// median" describes none of them.
-// Within a look, seconds are ordered by HEIGHT: ink low in the picture first.
+// The bars are relative to the recording itself, because "a sharp edge" in a
+// harp piece and in a drum track are different numbers. Each bar is put at the
+// NATURAL BREAK in that measure across the recording — Otsu's threshold on its
+// logarithm: the split that best separates a low group from a high group.
+//     struck   edge above the break in edge
+//     else     wash if grain is above the break in grain, tonal if below
+// Two median-based schemes came first and both failed on the synthetic recording,
+// for one reason: anything measured against "the recording's median" goes blind
+// whenever a whole population SITS on the median. A third of the fixture is hiss,
+// so the median grain WAS the hiss, every hiss piece scored 0.00 for "wash" and
+// 0.00 for "tonal", and rounding error chose between them. A break between groups
+// does not care where the median falls.
+// Within a look, pieces are ordered by HEIGHT: ink low in the picture first.
 // ---------------------------------------------------------------------------
 export const LOOKS = ['tonal', 'struck', 'wash'];
 
 export function arrange(looks, { minPerLook = 4 } = {}) {
   const n = looks.length;
   if (!n) throw new Error('look: nothing to arrange');
-  const FLOOR = 1e-4;
-  const stat = (key, pool) => {
-    const v = pool.map((l) => Math.log(Math.max(l[key], FLOOR))).sort((a, b) => a - b);
-    const at = (q) => v[Math.min(v.length - 1, Math.floor(q * v.length))];
-    return { med: at(0.5), range: Math.max(at(0.9) - at(0.1), 0.05) };
+  // Logs, floored at a hundredth of the recording's own largest value. Without the floor a
+  // perfectly steady tone (edge exactly 0) sits at minus infinity, and the "natural break"
+  // becomes the gap between nothing and almost nothing: a difference a hundred times smaller
+  // than the biggest one in the picture is not a visible difference.
+  const floorOf = {};
+  const lg = (l, key) => Math.log(Math.max(l[key], floorOf[key]));
+  // Otsu: sort, try every split, keep the one with the greatest between-group variance
+  const breakIn = (key, pool) => {
+    const v = pool.map((l) => lg(l, key)).sort((a, b) => a - b);
+    const total = v.reduce((a, b) => a + b, 0);
+    let best = -1, at = v[v.length >> 1], low = 0;
+    for (let k = 1; k < v.length; k++) {
+      low += v[k - 1];
+      if (v[k] === v[k - 1]) continue;
+      const w0 = k / v.length, w1 = 1 - w0, d = low / k - (total - low) / (v.length - k);
+      const between = w0 * w1 * d * d;
+      if (between > best) { best = between; at = (v[k - 1] + v[k]) / 2; }
+    }
+    return at;
   };
   // the picture's black point is already this recording's own (exposureOf), so an
   // absolute bar is a relative one: nothing darker than ~50 dB below the loudest moments
   const QUIET_BAR = 0.3;
   const speaking = looks.filter((l) => l.inkMax >= QUIET_BAR);
-  if (speaking.length < LOOKS.length * minPerLook) throw new Error(`look: only ${speaking.length} of ${n} seconds have enough ink to speak with; need at least ${LOOKS.length * minPerLook}`);
+  if (speaking.length < LOOKS.length * minPerLook) throw new Error(`look: only ${speaking.length} of ${n} pieces have enough ink to speak with; need at least ${LOOKS.length * minPerLook}`);
 
-  const S = { edge: stat('edge', speaking), speckle: stat('speckle', speaking) };
-  const z = (l, key) => (Math.log(Math.max(l[key], FLOOR)) - S[key].med) / S[key].range;
+  for (const key of ['edge', 'speckle']) floorOf[key] = Math.max(1e-9, 0.01 * Math.max(...speaking.map((l) => l[key])));
+  const edgeBar = breakIn('edge', speaking);
+  // a click flickers too, so the grain break is looked for among the pieces that are NOT struck
+  const unstruck = speaking.filter((l) => lg(l, 'edge') < edgeBar);
+  const grainBar = breakIn('speckle', unstruck.length >= 2 ? unstruck : speaking);
   const out = looks.map((l, index) => {
     if (l.inkMax < QUIET_BAR) return { ...l, index, look: 'quiet' };
-    // grainy -> wash, smooth -> tonal, and either way a thin line that stands out further than that -> struck
-    const score = { struck: z(l, 'edge'), wash: z(l, 'speckle'), tonal: -z(l, 'speckle') };
-    const look = LOOKS.reduce((a, b) => (score[b] > score[a] ? b : a));
+    // how far past each bar, in log units (used only to lend pieces to a look that came up short)
+    const score = { struck: lg(l, 'edge') - edgeBar, wash: lg(l, 'speckle') - grainBar, tonal: grainBar - lg(l, 'speckle') };
+    const look = score.struck >= 0 ? 'struck' : score.wash >= 0 ? 'wash' : 'tonal';
     return { ...l, index, look, score };
   });
   // a look nobody won outright still needs members: take the best-scoring from the largest look

@@ -132,7 +132,14 @@ test('cli: cuts a recording into a bank, speaks with it, and refuses a file that
     const song = path.join(dir, 'song.wav');
     fs.writeFileSync(song, encodeWav(x, sr));
     const bankFile = path.join(dir, 'song.bank.wav');
-    const made = cli('bank', song, '-o', bankFile, '--note', 'test tones', '--quiet');
+    // left to itself the CLI cuts quarter seconds
+    const quarters = path.join(dir, 'quarters.bank.wav');
+    assert.equal(cli('bank', song, '-o', quarters, '--quiet').status, 0);
+    const q = decodeBank(fs.readFileSync(quarters));
+    assert.equal(q.segmentSeconds, 0.25);
+    assert.equal(q.segments.length, 60);
+
+    const made = cli('bank', song, '-o', bankFile, '--segment', '1', '--note', 'test tones', '--quiet');
     assert.equal(made.status, 0, made.stderr);
     assert.ok(fs.existsSync(path.join(dir, 'song.sheet.png')), 'no contact sheet beside the bank');
     const bank = decodeBank(fs.readFileSync(bankFile));

@@ -17,7 +17,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { decodeWav } from '../src/wav.mjs';
-import { makeBank, encodeBank } from '../src/bank.mjs';
+import { makeBank, encodeBank, DEFAULT_PIECE } from '../src/bank.mjs';
 import { picture, thumbnail, LOOKS } from '../src/look.mjs';
 import { encodePng, pixelText } from './spectrogram.mjs';
 
@@ -66,7 +66,11 @@ export function sheetPathFor(target) {
 }
 
 export function contactSheet(bank) {
-  const TW = 58, TH = 46, GAP = 4, PER_ROW = 20, LABEL = 8, HEAD = 14;
+  // a shorter piece gets a narrower thumbnail: the sheet keeps roughly one time scale
+  const TW = bank.segmentSeconds >= 0.75 ? 58 : bank.segmentSeconds >= 0.4 ? 40 : 27;
+  const TH = 46, GAP = 4, LABEL = 8, HEAD = 14;
+  const PER_ROW = Math.floor(1240 / (TW + GAP));
+  const stamp = (origin) => { const t = origin * bank.segmentSeconds; return bank.segmentSeconds >= 1 ? `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}` : t.toFixed(2); };
   const groups = [...LOOKS, 'quiet'].map((look) => ({ look, items: bank.looks[look] })).filter((g) => g.items.length);
   const rowsOf = (g) => Math.ceil(g.items.length / PER_ROW);
   const W = GAP + PER_ROW * (TW + GAP);
@@ -83,7 +87,7 @@ export function contactSheet(bank) {
       const th = thumbnail(picture(seg.samples, bank.sampleRate), bank.exposure, TW, TH);
       for (let y = 0; y < TH; y++) for (let x = 0; x < TW; x++) { const v = Math.round(246 - 222 * Math.pow(th[y * TW + x], 1.3)); px(x0 + x, yy + y, v, v, Math.min(255, v + 5)); }
       if (seg.look === 'struck') { const cx = x0 + Math.round((seg.cue / bank.segmentSeconds) * TW); for (let y = 0; y < 4; y++) px(cx, yy + TH - 1 - y, 190, 60, 40); } // where the edge was found
-      pixelText(px, `${Math.floor(seg.second / 60)}:${String(seg.second % 60).padStart(2, '0')}`, x0, yy + TH + 2, [120, 120, 120]);
+      pixelText(px, stamp(seg.origin), x0, yy + TH + 2, [120, 120, 120]); // where it sat in the recording (m:ss, or seconds)
     });
     y0 += rowsOf(g) * (TH + LABEL + GAP);
   }
@@ -95,9 +99,9 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   const flag = (name, def) => { const i = args.indexOf(name); if (i < 0) return def; const v = args[i + 1]; args.splice(i, 2); return v; };
   const out = flag('-o', null);
   const rate = Number(flag('--rate', 32000));
-  const seconds = Number(flag('--segment', 1));
+  const seconds = Number(flag('--segment', DEFAULT_PIECE));
   const note = flag('--note', null);
-  if (args.length !== 1) { console.error('usage: node tools/make-bank.mjs <audio file> [-o out.bank.wav] [--segment 1] [--rate 32000] [--note "licence / credit"]'); process.exit(2); }
+  if (args.length !== 1) { console.error(`usage: node tools/make-bank.mjs <audio file> [-o out.bank.wav] [--segment ${DEFAULT_PIECE}] [--rate 32000] [--note "licence / credit"]`); process.exit(2); }
   try {
     const name = path.parse(args[0]).name;
     const target = out ?? path.join('banks', `${name}.bank.wav`);
@@ -108,7 +112,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     fs.writeFileSync(target, encodeBank(bank));
     const sheet = sheetPathFor(target);
     fs.writeFileSync(sheet, contactSheet(bank));
-    console.log(`${target}  ${bank.segments.length} segments of ${seconds} s at ${sampleRate} Hz, arranged in ${((performance.now() - t0) / 1000).toFixed(1)} s`);
+    console.log(`${target}  ${bank.segments.length} pieces of ${seconds} s at ${sampleRate} Hz, arranged in ${((performance.now() - t0) / 1000).toFixed(1)} s`);
     for (const look of [...LOOKS, 'quiet']) console.log(`  ${look.padEnd(7)} ${String(bank.looks[look].length).padStart(4)}`);
     console.log(sheet);
   } catch (e) { console.error(`make-bank: ${e.message}`); process.exit(2); }

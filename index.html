@@ -47,8 +47,12 @@
     </div>
     <div class="row" id="bankRow">
       <span class="cap inline">bank</span>
-      <button id="bankPick" title="a .bank.wav made earlier, or ANY audio file: it is cut into 1-second pieces and arranged by how each one looks">load audio&hellip;</button>
+      <button id="bankPick" title="a .bank.wav made earlier, or ANY audio file: it is cut into quarter-second pieces and arranged by how each one looks">load audio&hellip;</button>
       <input type="file" id="bankFile" accept="audio/*,.wav,.mp3,.ogg,.m4a,.flac" hidden>
+      <label class="cap inline" for="bankCut" id="bankCutLabel" hidden>cut</label>
+      <select id="bankCut" hidden title="how long each piece is. Changing it un-arranges the recording and cuts it again.">
+        <option value="1">whole second</option><option value="0.5">half second</option><option value="0.25" selected>quarter second</option>
+      </select>
       <label class="check" id="bankUse" hidden><input type="checkbox" id="bankOn" checked> speak with it</label>
       <button id="bankSave" hidden title="save the arranged bank: a WAV you can also just play">save .bank.wav</button>
       <span id="bankNote" class="dim">speak with slices of a recording instead of the synth</span>

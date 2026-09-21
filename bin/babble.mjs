@@ -4,7 +4,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { render, renderScript, parseScript, resolveVoice, randomVoice, compactVoice, revealSchedule, encodeWav, makeBank, encodeBank, decodeBank, PRESETS, PARAMS, FX_PARAMS } from '../src/index.mjs';
+import { render, renderScript, parseScript, resolveVoice, randomVoice, compactVoice, revealSchedule, encodeWav, makeBank, encodeBank, decodeBank, DEFAULT_PIECE, PRESETS, PARAMS, FX_PARAMS } from '../src/index.mjs';
 
 const USAGE = `babble — text in, video-game voice out
 
@@ -24,7 +24,7 @@ options
   --take <n>                 another take of the same line (varies the small stuff)
   --weights <table.json>     a tts-weights table: per-word duration and vowel reduction
   --bank <file.bank.wav>     speak with a voice bank; pitch is then tape speed (140 = as recorded)
-  --segment <seconds>        bank: length of each cut                          [1]
+  --segment <seconds>        bank: length of each piece                        [0.25]
   --note <text>              bank: credit / licence line to store inside it
   --sr <hz>                  sample rate                                      [44100]
   --plan <file.json>         also write the timed plan (units, pitch, reveal schedule)
@@ -38,12 +38,14 @@ script
   Output: NNN-name.wav per line and manifest.json with each line's duration and reveal schedule.
 
 bank
-  Cuts the recording into equal segments, looks at each one's spectrogram and arranges them by
+  Cuts the recording into equal pieces (a quarter second each unless --segment says otherwise),
+  looks at each one's spectrogram and arranges them by
   how they look: "struck" (a vertical line), "wash" (speckle), "tonal" (horizontal stripes), each
   ordered by where the ink sits. The bank is a WAV you can also just play. Beside it goes
-  <name>.sheet.png, every segment's picture in arranged order. A syllable that opens with a stop
-  takes a struck second, a hiss a wash second, anything softer a tonal one; the brighter its
-  vowel, the higher-inked the second. mp3/ogg/etc. need ffmpeg (PATH, $BABBLE_FFMPEG, or the
+  <name>.sheet.png, every piece's picture in arranged order. A syllable that opens with a stop
+  takes a struck piece, a hiss a wash piece, anything softer a tonal one; the brighter its vowel,
+  the higher-inked the piece. A syllable longer than its piece reads on into whatever FOLLOWED
+  that piece in the recording. mp3/ogg/etc. need ffmpeg (PATH, $BABBLE_FFMPEG, or the
   copy in ../audio-splicer).
 
 knobs (for --set)
@@ -134,12 +136,12 @@ if (cmd === 'voices' && rest.length === 0) {
   const target = opts.out ?? path.join('banks', `${name}.bank.wav`);
   try {
     const { samples, sampleRate } = readAudio(rest[0], Number(opts.rate ?? 32000));
-    const bank = makeBank(samples, sampleRate, { name, segmentSeconds: Number(opts.segment ?? 1), source: path.basename(rest[0]), note: opts.note ?? null });
+    const bank = makeBank(samples, sampleRate, { name, segmentSeconds: Number(opts.segment ?? DEFAULT_PIECE), source: path.basename(rest[0]), note: opts.note ?? null });
     fs.mkdirSync(path.dirname(path.resolve(target)), { recursive: true });
     fs.writeFileSync(target, encodeBank(bank));
     const sheet = sheetPathFor(target);
     fs.writeFileSync(sheet, contactSheet(bank));
-    if (!opts.quiet) { console.log(`${target}  ${bank.segments.length} segments: ${Object.entries(bank.looks).map(([k, v]) => `${k} ${v.length}`).join(', ')}`); console.log(sheet); }
+    if (!opts.quiet) { console.log(`${target}  ${bank.segments.length} pieces of ${bank.segmentSeconds} s: ${Object.entries(bank.looks).map(([k, v]) => `${k} ${v.length}`).join(', ')}`); console.log(sheet); }
   } catch (e) { fail(e.message.replace(/^(bank|look): /, '')); }
 } else if (cmd === 'script') {
   if (rest.length !== 1) fail('script wants exactly one lines file');
