@@ -1,0 +1,6 @@
+# LF everywhere, on every platform. The standalone build inlines src/ into one
+# HTML file and a test compares the result byte-for-byte; a CRLF checkout would
+# make that comparison lie.
+* text=auto eol=lf
+*.wav binary
+*.png binary
