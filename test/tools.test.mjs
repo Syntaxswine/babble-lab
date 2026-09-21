@@ -6,7 +6,7 @@ import path from 'node:path';
 import vm from 'node:vm';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { plan, render, makeTongue, applyTongue, MANNER_CLASSES, PHONEMES, decodeWav, parseScript, renderScript, randomVoice, compactVoice, resolveVoice } from '../src/index.mjs';
+import { plan, render, makeTongue, applyTongue, MANNER_CLASSES, PHONEMES, decodeWav, encodeWav, decodeBank, parseScript, renderScript, randomVoice, compactVoice, resolveVoice } from '../src/index.mjs';
 import { createSpeaker } from '../src/runtime.mjs';
 import { buildAll } from '../tools/build-standalone.mjs';
 
@@ -115,6 +115,43 @@ test('cli: refuses what it does not understand, and says why', () => {
   }
   assert.match(cli('voices').stdout, /gruff +syllable/);
   assert.equal(JSON.parse(cli('roll', '7').stdout).name, 'rolled-7');
+});
+
+test('cli: cuts a recording into a bank, speaks with it, and refuses a file that is not one', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'babble-bank-'));
+  try {
+    // 15 plain seconds: a held tone, a click, a hiss, over and over
+    const sr = 16000;
+    const x = new Float32Array(sr * 15);
+    let seed = 1;
+    const noise = () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 2147483648 - 1; };
+    for (let k = 0; k < 15; k++) for (let i = 0; i < sr; i++) {
+      const hump = 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / sr);
+      x[k * sr + i] = k % 3 === 0 ? 0.3 * hump * Math.sin((2 * Math.PI * (200 + 40 * k) * i) / sr) : k % 3 === 1 ? (i >= 4000 ? 0.7 * noise() * Math.exp(-(i - 4000) / 200) : 0) : 0.1 * noise() * (0.6 + 0.4 * hump);
+    }
+    const song = path.join(dir, 'song.wav');
+    fs.writeFileSync(song, encodeWav(x, sr));
+    const bankFile = path.join(dir, 'song.bank.wav');
+    const made = cli('bank', song, '-o', bankFile, '--note', 'test tones', '--quiet');
+    assert.equal(made.status, 0, made.stderr);
+    assert.ok(fs.existsSync(path.join(dir, 'song.sheet.png')), 'no contact sheet beside the bank');
+    const bank = decodeBank(fs.readFileSync(bankFile));
+    assert.equal(bank.segments.length, 15);
+    assert.equal(bank.note, 'test tones');
+    for (const look of ['tonal', 'struck', 'wash']) assert.ok(bank.looks[look].length >= 4, `only ${bank.looks[look].length} "${look}" pieces`);
+
+    const spoken = path.join(dir, 'hi.wav');
+    const said = cli('Take this, stranger!', '--bank', bankFile, '--set', 'pitch=280', '-o', spoken);
+    assert.equal(said.status, 0, said.stderr);
+    assert.match(said.stdout, /bank song, tape x2\.00/);
+    assert.ok(decodeWav(fs.readFileSync(spoken)).samples.length > 20000);
+
+    const refused = cli('hi', '--bank', song);
+    assert.equal(refused.status, 2);
+    assert.match(refused.stderr, /no babble-lab index/);
+    // "bank" followed by something that is not a file is just a line to say
+    assert.equal(cli('bank', 'robbery!', '-o', path.join(dir, 'line.wav'), '--quiet').status, 0);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
 // ------------------------------------------------------------------ build

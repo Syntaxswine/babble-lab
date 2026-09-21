@@ -9,6 +9,9 @@
 //
 // A line is rendered once and cached, so a repeated bark costs nothing, and
 // speaker.prepare() lets a scene warm its lines up before they are needed.
+//
+// Voices that speak with a bank (voice.bank = 'name') need the bank itself:
+//   createSpeaker(ctx, { banks: { name: decodeBank(bytes) } })   or   say(text, voice, { bank })
 
 import { render, revealAt } from './index.mjs';
 
@@ -19,10 +22,11 @@ export function createSpeaker(audioContext, defaults = {}) {
   let current = null;
 
   function prepare(text, voice, opts = {}) {
-    const key = JSON.stringify([text, voice, opts.seed ?? 0]);
+    const bank = opts.bank ?? null;
+    const key = JSON.stringify([text, voice, opts.seed ?? 0, bank?.name ?? null]);
     let hit = cache.get(key);
     if (!hit) {
-      const { samples, plan } = render(text, voice, { sampleRate: audioContext.sampleRate, seed: opts.seed ?? 0, weights: opts.weights ?? defaults.weights });
+      const { samples, plan } = render(text, voice, { sampleRate: audioContext.sampleRate, seed: opts.seed ?? 0, weights: opts.weights ?? defaults.weights, bank, banks: defaults.banks });
       const buffer = audioContext.createBuffer(1, samples.length, audioContext.sampleRate);
       buffer.getChannelData(0).set(samples);
       hit = { buffer, plan };

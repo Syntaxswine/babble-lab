@@ -7,7 +7,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { render, encodeWav, PRESETS, resolveVoice } from '../src/index.mjs';
+import { render, encodeWav, decodeBank, PRESETS, resolveVoice } from '../src/index.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const dir = path.join(root, 'audition');
@@ -43,6 +43,26 @@ for (const [label, tongue] of TONGUES) {
   tongueRows += `<tr><th>${label}</th><td class="dim">${esc(said)}</td><td><audio controls preload="none" src="${file}"></audio></td></tr>\n`;
 }
 
+// every bank in banks/: the same lines, spoken with slices of the recording, at a few tape speeds
+let bankRows = '';
+const banksDir = path.join(root, 'banks');
+for (const file of fs.existsSync(banksDir) ? fs.readdirSync(banksDir).filter((f) => f.toLowerCase().endsWith('.bank.wav')) : []) {
+  const bank = decodeBank(fs.readFileSync(path.join(banksDir, file)));
+  const takes = [['as recorded', { pitch: 140 }], ['tape ×1.5', { pitch: 210 }], ['tape ×2', { pitch: 280 }], ['tape ×3, quick', { pitch: 420, rate: 1.3 }], ['letter patter ×2.5', { mode: 'letter', pitch: 350, rate: 1.2 }], ['tape ×0.6, slow', { pitch: 84, rate: 0.75 }]];
+  for (const [label, voice] of takes) {
+    let cells = '';
+    for (const [tag, text] of LINES) {
+      const out = `bank.${bank.name}.${label.replace(/[^a-z0-9]+/gi, '-')}.${tag}.wav`;
+      const { samples, sampleRate } = render(text, voice, { bank });
+      fs.writeFileSync(path.join(dir, out), encodeWav(samples, sampleRate));
+      cells += `<td><audio controls preload="none" src="${out}"></audio></td>`;
+    }
+    bankRows += `<tr><th>${esc(bank.name)}</th><td class="dim">${esc(label)}</td>${cells}</tr>\n`;
+  }
+  bankRows += `<tr><th>${esc(bank.name)}</th><td class="dim">the bank itself: the recording re-arranged by look (${Object.entries(bank.looks).map(([k, v]) => `${v.length} ${k}`).join(', ')})</td><td colspan="2"><audio controls preload="none" src="../banks/${esc(file)}"></audio></td></tr>\n`;
+  console.log(`bank: ${bank.name}`);
+}
+
 fs.writeFileSync(path.join(dir, 'index.html'), `<!doctype html><meta charset="utf-8"><title>babble-lab audition</title>
 <style>body{font:12px/1.5 ui-monospace,Consolas,monospace;background:#f6f3ea;color:#2b2a27;padding:16px 20px}h1{font-size:14px}h2{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#5b6b73;margin-top:22px}
 table{border-collapse:collapse}th{text-align:left;padding-right:14px}td,th{border-bottom:1px dotted #cfc9b8;padding:3px 10px 3px 0;vertical-align:middle}.dim{color:#7d786b;max-width:420px}audio{height:28px;width:230px}</style>
@@ -51,6 +71,9 @@ table{border-collapse:collapse}th{text-align:left;padding-right:14px}td,th{borde
 <h2>presets</h2>
 <table><tr><th></th><th></th>${LINES.map(([, t]) => `<th class="dim">${esc(t)}</th>`).join('')}</tr>
 ${rows}</table>
+${bankRows ? `<h2>speaking with a recording</h2>
+<p class="dim">Same lines, same timing and melody — but each syllable is a slice of a recording that LOOKS like it: a stop takes a second with a sharp vertical line, a hiss a grainy one, anything softer a smooth one; brighter vowels reach for seconds with ink higher in the picture. Pitch is tape speed.</p>
+<table>${bankRows}</table>` : ''}
 <h2>one voice, three tongues</h2>
 <p class="dim">Same text, same voice. A tongue permutes sounds within their manner class: the rhythm stays, the words go.</p>
 <table>${tongueRows}</table>

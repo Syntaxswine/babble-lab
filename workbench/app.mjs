@@ -1,7 +1,7 @@
 // The workbench. Type a line, shape a voice, watch and hear what the engine does
 // with it. Everything audible comes from ../src — this file only draws and plays.
 
-import { render, resolveVoice, randomVoice, compactVoice, encodeWav, PRESETS, PARAMS, FX_PARAMS, MODES, WAVES } from '../src/index.mjs';
+import { render, resolveVoice, randomVoice, compactVoice, encodeWav, makeBank, encodeBank, decodeBank, PRESETS, PARAMS, FX_PARAMS, MODES, WAVES } from '../src/index.mjs';
 import { createSpeaker } from '../src/runtime.mjs';
 import { spectrogram } from './spectro.mjs';
 
@@ -17,6 +17,8 @@ let speaker = null;
 let playing = null;
 let take = 0;
 let timer = 0;
+let bank = null; // a decoded voice bank, if one is loaded
+const bankInUse = () => (bank && $('bankOn').checked ? bank : undefined);
 
 // ------------------------------------------------------------------ audio
 function audio() {
@@ -29,13 +31,14 @@ const sampleRate = () => (ctx ? ctx.sampleRate : 44100);
 function refresh() {
   const text = $('line').value;
   const t0 = performance.now();
-  rendered = render(text, voice, { sampleRate: sampleRate(), seed: take });
+  rendered = render(text, voice, { sampleRate: sampleRate(), seed: take, bank: bankInUse() });
   grid = null;
   const ms = performance.now() - t0;
   const units = rendered.plan.units.filter((u) => u.kind !== 'rest');
   $('status').textContent = units.length
     ? `${units.length} ${voice.mode === 'syllable' ? 'syllables' : 'letters'} · ${(rendered.samples.length / rendered.sampleRate).toFixed(2)} s · rendered in ${ms.toFixed(0)} ms${take ? ` · take ${take}` : ''}`
     : 'nothing to say';
+  if (units.length && bankInUse()) $('status').textContent += ` · bank ${bank.name}, tape ×${(voice.pitch / 140).toFixed(2)}`;
   showReveal(text.length);
   draw();
 }
@@ -58,7 +61,7 @@ function speak(fromTime = 0) {
     playing = { stop: () => { try { src.stop(); } catch { /* done */ } }, get time() { return ctx.currentTime - startAt + fromTime; } };
     src.onended = () => { if (playing && playing.stop) playing = null; draw(); };
   } else {
-    playing = sp.say(text, voice, { seed: take, onReveal: (chars) => showReveal(chars), onEnd: () => { playing = null; draw(); } });
+    playing = sp.say(text, voice, { seed: take, bank: bankInUse(), onReveal: (chars) => showReveal(chars), onEnd: () => { playing = null; draw(); } });
   }
   requestAnimationFrame(animate);
 }
@@ -161,8 +164,10 @@ function readout(ev) {
   const r = $('score').getBoundingClientRect();
   const t = ((ev.clientX - r.left) / r.width) * (rendered.samples.length / rendered.sampleRate);
   const u = rendered.plan.units.find((q) => t >= q.t0 && t < q.t1);
+  const took = u && rendered.used ? rendered.used.find((q) => q.unit === rendered.plan.units.indexOf(u)) : null;
+  const from = took ? ` · ${took.look} second ${Math.floor(took.second / 60)}:${String(took.second % 60).padStart(2, '0')} of the recording` : '';
   const hz = ev.clientY - r.top < SPEC_H ? ` · ${Math.round(8000 * (1 - (ev.clientY - r.top) / SPEC_H))} Hz` : '';
-  $('readout').textContent = u ? `${t.toFixed(2)} s${hz} · ${u.kind === 'rest' ? `pause (${u.mark})` : `"${u.label}"  [${(u.phones ?? []).join(' ')}]  ${u.p0 >= 0 ? '+' : ''}${u.p0.toFixed(1)} → ${u.p1 >= 0 ? '+' : ''}${u.p1.toFixed(1)} st${u.reduced ? ' · swallowed' : ''}${u.stress ? ' · stressed' : ''}`}` : `${t.toFixed(2)} s${hz}`;
+  $('readout').textContent = u ? `${t.toFixed(2)} s${hz} · ${u.kind === 'rest' ? `pause (${u.mark})` : `"${u.label}"  [${(u.phones ?? []).join(' ')}]  ${u.p0 >= 0 ? '+' : ''}${u.p0.toFixed(1)} → ${u.p1 >= 0 ? '+' : ''}${u.p1.toFixed(1)} st${u.reduced ? ' · swallowed' : ''}${u.stress ? ' · stressed' : ''}${from}`}` : `${t.toFixed(2)} s${hz}`;
 }
 
 // ------------------------------------------------------------------ knobs
@@ -246,6 +251,31 @@ function download(name, bytes, type) {
 }
 const slug = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'line';
 
+// ------------------------------------------------------------------ bank
+async function loadBankFile(file) {
+  const note = $('bankNote');
+  try {
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    let loaded = null;
+    try { loaded = decodeBank(bytes); } catch { /* not a bank: treat it as plain audio below */ }
+    if (!loaded) {
+      note.textContent = `cutting ${file.name} into seconds and looking at each one…`;
+      audio();
+      const decoded = await ctx.decodeAudioData(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
+      const mono = new Float32Array(decoded.length);
+      for (let c = 0; c < decoded.numberOfChannels; c++) { const ch = decoded.getChannelData(c); for (let i = 0; i < mono.length; i++) mono[i] += ch[i] / decoded.numberOfChannels; }
+      await new Promise((r) => setTimeout(r, 30)); // let the note paint before the long think
+      loaded = makeBank(mono, decoded.sampleRate, { name: file.name.replace(/[.][^.]+$/, ''), source: file.name });
+    }
+    bank = loaded;
+    $('bankUse').hidden = false;
+    $('bankSave').hidden = false;
+    $('bankOn').checked = true;
+    note.textContent = `${bank.name}: ${bank.segments.length} pieces — ${Object.entries(bank.looks).map(([k, v]) => `${v.length} ${k}`).join(', ')}. pitch is now tape speed (140 = as recorded).`;
+    changed();
+  } catch (e) { note.textContent = `could not use ${file.name}: ${e.message}`; }
+}
+
 // ------------------------------------------------------------------ wiring
 function init() {
   const preset = $('preset');
@@ -271,6 +301,10 @@ function init() {
   $('stop').addEventListener('click', () => { stop(); draw(); });
   $('take').addEventListener('click', () => { take++; audio(); refresh(); speak(); });
   $('wav').addEventListener('click', () => { if (!rendered) refresh(); download(`${slug($('line').value)}.${slug(voice.name)}.wav`, encodeWav(rendered.samples, rendered.sampleRate), 'audio/wav'); });
+  $('bankPick').addEventListener('click', () => $('bankFile').click());
+  $('bankFile').addEventListener('change', () => { const f = $('bankFile').files[0]; if (f) loadBankFile(f); $('bankFile').value = ''; });
+  $('bankOn').addEventListener('change', () => changed());
+  $('bankSave').addEventListener('click', () => { if (bank) download(`${slug(bank.name)}.bank.wav`, encodeBank(bank), 'audio/wav'); });
   $('roll').addEventListener('click', () => { const seed = Math.floor(Math.random() * 100000); $('preset').value = ''; audio(); setVoice(randomVoice(seed), `rolled from ${seed}`); });
 
   $('copy').addEventListener('click', async () => { try { await navigator.clipboard.writeText($('json').value); $('jsonmsg').textContent = 'copied'; } catch { $('json').select(); $('jsonmsg').textContent = 'select-all done; press Ctrl+C'; } });
@@ -294,4 +328,4 @@ function init() {
 init();
 
 // for driving the page from a test harness
-window.babbleLab = { get voice() { return voice; }, get rendered() { return rendered; }, setVoice, refresh, speak, stop };
+window.babbleLab = { get voice() { return voice; }, get rendered() { return rendered; }, get bank() { return bank; }, setVoice, refresh, speak, stop, loadBankFile };

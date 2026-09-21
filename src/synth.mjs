@@ -274,15 +274,23 @@ function calibrate(voice, sr) {
 }
 
 // ---------------------------------------------------------------------------
-export function renderPlan(plan, opts = {}) {
-  const sr = opts.sampleRate ?? 44100;
-  if (!(sr >= 8000 && sr <= 192000)) throw new Error(`babble: sampleRate ${sr} out of range`);
-  const gains = calibrate(plan.voice, sr);
-  let samples = synthesize(plan, sr, gains);
-  if (opts.fx !== false) samples = applyFx(samples, plan.voice.fx, sr);
+// What happens after ANY mouth, synthesised or sampled: effects, gain, the
+// limiter, and edge fades so a clip always starts and ends at rest.
+export function finish(samples, voice, sr, opts = {}) {
+  if (opts.fx !== false) samples = applyFx(samples, voice.fx, sr);
   const g = opts.gain ?? 1;
   const fade = Math.min(Math.floor(0.003 * sr), samples.length >> 1);
   for (let i = 0; i < samples.length; i++) samples[i] = softLimit(samples[i] * g);
   for (let i = 0; i < fade; i++) { const w = i / fade; samples[i] *= w; samples[samples.length - 1 - i] *= w; }
   return samples;
+}
+
+export function checkRate(sr) {
+  if (!(sr >= 8000 && sr <= 192000)) throw new Error(`babble: sampleRate ${sr} out of range`);
+  return sr;
+}
+
+export function renderPlan(plan, opts = {}) {
+  const sr = checkRate(opts.sampleRate ?? 44100);
+  return finish(synthesize(plan, sr, calibrate(plan.voice, sr)), plan.voice, sr, opts);
 }

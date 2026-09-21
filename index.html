@@ -45,6 +45,14 @@
       <span class="cap inline">mode</span><span id="modes" class="seg"></span>
       <label class="cap inline" for="wave">source</label><select id="wave"></select>
     </div>
+    <div class="row" id="bankRow">
+      <span class="cap inline">bank</span>
+      <button id="bankPick" title="a .bank.wav made earlier, or ANY audio file: it is cut into 1-second pieces and arranged by how each one looks">load audio&hellip;</button>
+      <input type="file" id="bankFile" accept="audio/*,.wav,.mp3,.ogg,.m4a,.flac" hidden>
+      <label class="check" id="bankUse" hidden><input type="checkbox" id="bankOn" checked> speak with it</label>
+      <button id="bankSave" hidden title="save the arranged bank: a WAV you can also just play">save .bank.wav</button>
+      <span id="bankNote" class="dim">speak with slices of a recording instead of the synth</span>
+    </div>
     <div id="blipRow" class="row" hidden>
       <label class="knob"><span>blip length</span><input type="range" id="blipLen" min="0.01" max="0.2" step="0.005"><output id="blipLenOut"></output></label>
       <label class="knob"><span>blip every</span><input type="range" id="blipEvery" min="1" max="4" step="1"><output id="blipEveryOut"></output></label>

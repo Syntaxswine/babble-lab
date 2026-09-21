@@ -51,6 +51,7 @@ export const DEFAULT_VOICE = {
   ...DEFAULTS,
   blip: { len: 0.05, every: 1 },
   syllabary: null, // e.g. [['W','AA'],['W','AO']] — say these instead of the text's own sounds
+  bank: null, // the NAME of a voice bank to speak with instead of the synth; the caller supplies the bank itself
   fx: { ...FX_DEFAULTS },
 };
 
@@ -105,6 +106,7 @@ export function resolveVoice(voice) {
   out.blip.len = clamp(Number(out.blip.len) || 0.05, 0.01, 0.4);
   out.blip.every = clamp(Math.round(Number(out.blip.every) || 1), 1, 8);
   if (out.syllabary && !(Array.isArray(out.syllabary) && out.syllabary.length && out.syllabary.every(Array.isArray))) out.syllabary = null;
+  out.bank = typeof out.bank === 'string' && out.bank ? out.bank : null;
   return out;
 }
 
@@ -150,5 +152,6 @@ export function compactVoice(voice) {
   if (Object.keys(fx).length) out.fx = fx;
   if (v.mode === 'blip') out.blip = v.blip;
   if (v.syllabary) out.syllabary = v.syllabary;
+  if (v.bank) out.bank = v.bank;
   return out;
 }

@@ -145,6 +145,69 @@ swallowed in every tongue.
 
 ---
 
+## Speaking with a recording: voice banks
+
+The synth is one mouth. The other is a **bank**: any recording, cut into
+one-second pieces and *arranged by how each piece looks*.
+
+```bash
+node bin/babble.mjs bank song.mp3 -o banks/song.bank.wav
+```
+
+```bash
+node bin/babble.mjs "Who goes there?" --bank banks/song.bank.wav --set pitch=280 --play
+```
+
+In the workbench: **load audio…** takes a bank made earlier *or any audio file*,
+which it cuts and arranges in the page (a four-minute song takes ~8 s).
+
+"How it looks" is literal. Every second's spectrogram is measured as a picture
+(`src/look.mjs`) — how dark its darkest pixels are, where the ink sits from
+bottom to top, how far its sharpest *thin vertical line* stands out, how *grainy*
+the ink is along each row — and sorted into three looks a voice can use:
+
+| look | the picture | stands in for |
+|---|---|---|
+| `struck` | a thin vertical line: a pluck, a hit | syllables that open with a stop (`t`, `k`, `b`, `ch`…) |
+| `wash` | grain, speckle: shaker, breath, cymbal | syllables that open with a hiss (`s`, `f`, `sh`, `h`…) |
+| `tonal` | smooth horizontal stripes: a held note | everything that opens softly |
+| `quiet` | nearly blank | never used |
+
+Within a look, pieces are ordered by **where their ink sits**, dull to bright,
+and a syllable reaches along that order by the brightness of its vowel ("ee" has
+ink high in the picture, "oo" low). So *manner picks the look and place picks
+within it* — the tongue's rule, applied to somebody else's audio. A small
+`hash(word, syllable)` nudge keeps one vowel from always being the same second;
+the same word still always comes out the same.
+
+Everything else is unchanged, because the plan never knew what mouth it had:
+timing, pauses, emphasis and the text reveal are identical. **Pitch becomes tape
+speed** (`140` plays the recording as it is, `280` an octave up and twice as
+fast), and the melody of the line bends that speed — measured on a bank of pure
+tones, `Oh?` rises and `Oh.` falls exactly as the synth does. A `struck` piece is
+read from just before its edge, found in the waveform to within 20 ms, so the hit
+lands on the syllable.
+
+The bank is **one file, and an ordinary WAV**: play it and you hear the
+recording re-arranged look by look; load it and the index inside (a `bblb` RIFF
+chunk) says which second is which. Beside it goes `<name>.sheet.png`, every
+piece's picture in arranged order — the way to check the arrangement by eye.
+It is PCM on purpose: compressed decoders differ between platforms, and "same in,
+same samples out" has to hold for bank voices too.
+
+The looking was wrong three times before it was right, and each time a
+*synthetic recording with known contents* caught it (held tones, clicks at known
+instants, hiss, silence, shuffled — `test/bank.test.mjs`); the real song had
+hidden all three. A lone click on a pale ground was called quiet (mean ink);
+a tone fading in was called struck (any darkening, where a strike is a *thin*
+line); dull hiss was called tonal (a band of noise low in the picture *is* a dark
+horizontal band — what separates it from a held note is its grain).
+
+**Banks are not committed.** A bank is a derivative of its recording and carries
+that recording's licence, not this repository's. `banks/` is gitignored; the
+Glades of Arcadia bank is cut from that game's score (the owner's own track, made
+with Suno, non-commercial) and stays local.
+
 ## It consumes `tts-weights`
 
 `../tts-weights` builds per-word weight tables for a TTS voice and lists under

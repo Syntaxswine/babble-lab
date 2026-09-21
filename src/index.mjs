@@ -9,7 +9,8 @@
 // Everything is a pure function of (text, voice, opts): same in, same out.
 
 import { makePlan, revealAt, revealSchedule, weightsMap } from './prosody.mjs';
-import { renderPlan } from './synth.mjs';
+import { renderPlan, finish, checkRate } from './synth.mjs';
+import { synthesizeFromBank } from './sampler.mjs';
 import { resolveVoice } from './voices.mjs';
 
 export function plan(text, voice, opts) {
@@ -17,11 +18,18 @@ export function plan(text, voice, opts) {
 }
 
 // opts: { sampleRate = 44100, seed = 0 (another take of the same line), gain = 1,
-//         weights (a tts-weights table), fx = true }
+//         weights (a tts-weights table), fx = true,
+//         bank (a decoded voice bank: speak with slices of a recording instead of the synth) }
 export function render(text, voice, opts = {}) {
   const p = makePlan(text, voice, opts);
-  const sampleRate = opts.sampleRate ?? 44100;
-  return { samples: renderPlan(p, { ...opts, sampleRate }), sampleRate, plan: p };
+  const sampleRate = checkRate(opts.sampleRate ?? 44100);
+  const bank = opts.bank ?? (p.voice.bank ? opts.banks?.[p.voice.bank] : null);
+  // a voice that names a bank must get it: falling back to the synth would be a
+  // different character speaking, silently
+  if (p.voice.bank && !bank) throw new Error(`babble: voice "${p.voice.name}" speaks with the bank "${p.voice.bank}", which was not supplied (opts.bank, or opts.banks["${p.voice.bank}"])`);
+  if (!bank) return { samples: renderPlan(p, { ...opts, sampleRate }), sampleRate, plan: p };
+  const { samples, used } = synthesizeFromBank(p, bank, sampleRate);
+  return { samples: finish(samples, p.voice, sampleRate, opts), sampleRate, plan: p, used };
 }
 
 // A whole script with a cast: [{ who, text }] + { who: voice } -> rendered lines.
@@ -50,6 +58,7 @@ export function parseScript(source) {
 export { makePlan, renderPlan, revealAt, revealSchedule, weightsMap };
 export { resolveVoice, randomVoice, compactVoice, PRESETS, PARAMS, FX_PARAMS, MODES, WAVES, DEFAULT_VOICE } from './voices.mjs';
 export { encodeWav, decodeWav } from './wav.mjs';
+export { makeBank, encodeBank, decodeBank } from './bank.mjs';
 export { makeTongue, applyTongue, MANNER_CLASSES } from './tongue.mjs';
 export { analyze, tokenize, countSyllables, wordToSyllables } from './text.mjs';
 export { g2p } from './g2p.mjs';

@@ -4,7 +4,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { render, renderScript, parseScript, resolveVoice, randomVoice, compactVoice, revealSchedule, encodeWav, PRESETS, PARAMS, FX_PARAMS } from '../src/index.mjs';
+import { render, renderScript, parseScript, resolveVoice, randomVoice, compactVoice, revealSchedule, encodeWav, makeBank, encodeBank, decodeBank, PRESETS, PARAMS, FX_PARAMS } from '../src/index.mjs';
 
 const USAGE = `babble — text in, video-game voice out
 
@@ -14,6 +14,8 @@ const USAGE = `babble — text in, video-game voice out
   babble voices                                    list the presets
   babble roll [seed]                               print a randomly rolled voice as JSON
   babble script lines.txt --cast cast.json -o out  render a whole script (see below)
+  babble bank song.mp3 -o banks/song.bank.wav      cut a recording into a voice bank (see below)
+  babble "Hello there" --bank banks/song.bank.wav  speak with slices of it instead of the synth
 
 options
   --voice <name|file.json>   a preset, or a voice saved from the workbench   [narrator]
@@ -21,6 +23,9 @@ options
   --tongue <n>               0 = says the English it is given; n = invented language n
   --take <n>                 another take of the same line (varies the small stuff)
   --weights <table.json>     a tts-weights table: per-word duration and vowel reduction
+  --bank <file.bank.wav>     speak with a voice bank; pitch is then tape speed (140 = as recorded)
+  --segment <seconds>        bank: length of each cut                          [1]
+  --note <text>              bank: credit / licence line to store inside it
   --sr <hz>                  sample rate                                      [44100]
   --plan <file.json>         also write the timed plan (units, pitch, reveal schedule)
   -o, --out <path>           output .wav (or output directory, for "script")
@@ -32,6 +37,15 @@ script
   cast.json maps each name to a voice: { "Mira": "pixie", "Guard": { "preset": "gruff", "pitch": 78 } }
   Output: NNN-name.wav per line and manifest.json with each line's duration and reveal schedule.
 
+bank
+  Cuts the recording into equal segments, looks at each one's spectrogram and arranges them by
+  how they look: "struck" (a vertical line), "wash" (speckle), "tonal" (horizontal stripes), each
+  ordered by where the ink sits. The bank is a WAV you can also just play. Beside it goes
+  <name>.sheet.png, every segment's picture in arranged order. A syllable that opens with a stop
+  takes a struck second, a hiss a wash second, anything softer a tonal one; the brighter its
+  vowel, the higher-inked the second. mp3/ogg/etc. need ffmpeg (PATH, $BABBLE_FFMPEG, or the
+  copy in ../audio-splicer).
+
 knobs (for --set)
 ${[...PARAMS, ...FX_PARAMS.map((p) => ({ ...p, key: 'fx.' + p.key }))].map((p) => `  ${p.key.padEnd(15)} ${String(p.min).padStart(5)} .. ${String(p.max).padEnd(6)} ${p.hint}`).join('\n')}
   mode            syllable | letter | blip
@@ -42,7 +56,7 @@ function fail(msg) { console.error(`babble: ${msg}`); process.exit(2); }
 
 function parseArgs(argv) {
   const opts = { set: [], positional: [] };
-  const takesValue = new Set(['--voice', '--set', '--tongue', '--take', '--weights', '--sr', '--plan', '-o', '--out', '--cast']);
+  const takesValue = new Set(['--voice', '--set', '--tongue', '--take', '--weights', '--sr', '--plan', '-o', '--out', '--cast', '--bank', '--segment', '--note', '--rate']);
   const flags = new Set(['--play', '--quiet', '--help', '-h']);
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -82,6 +96,11 @@ function loadVoice(opts) {
   try { return resolveVoice(voice); } catch (e) { fail(e.message.replace(/^babble: /, '')); }
 }
 
+function loadBank(opts) {
+  if (!opts.bank) return undefined;
+  try { return decodeBank(fs.readFileSync(opts.bank)); } catch (e) { fail(`--bank ${opts.bank}: ${e.message.replace(/^bank: /, '')}`); }
+}
+
 function loadWeights(opts) {
   if (!opts.weights) return undefined;
   try { return JSON.parse(fs.readFileSync(opts.weights, 'utf8')); } catch (e) { fail(`--weights ${opts.weights}: ${e.message}`); }
@@ -108,6 +127,20 @@ if (cmd === 'voices' && rest.length === 0) {
   // "roll" followed by anything that is not a bare number is a line to be spoken
   const seed = rest[0] === undefined ? (Date.now() % 100000) : Number(rest[0]);
   console.log(JSON.stringify(compactVoice(randomVoice(seed)), null, 2));
+} else if (cmd === 'bank' && rest.length === 1 && fs.existsSync(rest[0])) {
+  // "bank" followed by an existing file makes a bank; anything else is a line to be spoken
+  const { readAudio, contactSheet, sheetPathFor } = await import('../tools/make-bank.mjs');
+  const name = path.parse(rest[0]).name;
+  const target = opts.out ?? path.join('banks', `${name}.bank.wav`);
+  try {
+    const { samples, sampleRate } = readAudio(rest[0], Number(opts.rate ?? 32000));
+    const bank = makeBank(samples, sampleRate, { name, segmentSeconds: Number(opts.segment ?? 1), source: path.basename(rest[0]), note: opts.note ?? null });
+    fs.mkdirSync(path.dirname(path.resolve(target)), { recursive: true });
+    fs.writeFileSync(target, encodeBank(bank));
+    const sheet = sheetPathFor(target);
+    fs.writeFileSync(sheet, contactSheet(bank));
+    if (!opts.quiet) { console.log(`${target}  ${bank.segments.length} segments: ${Object.entries(bank.looks).map(([k, v]) => `${k} ${v.length}`).join(', ')}`); console.log(sheet); }
+  } catch (e) { fail(e.message.replace(/^(bank|look): /, '')); }
 } else if (cmd === 'script') {
   if (rest.length !== 1) fail('script wants exactly one lines file');
   if (!opts.cast) fail('script needs --cast cast.json');
@@ -132,15 +165,16 @@ if (cmd === 'voices' && rest.length === 0) {
   const voice = loadVoice(opts);
   const sampleRate = Number(opts.sr ?? 44100);
   let result;
-  try { result = render(text, voice, { sampleRate, weights: loadWeights(opts), seed: Number(opts.take ?? 0) }); } catch (e) { fail(e.message.replace(/^babble: /, '')); }
+  const bank = loadBank(opts);
+  try { result = render(text, voice, { sampleRate, weights: loadWeights(opts), seed: Number(opts.take ?? 0), bank }); } catch (e) { fail(e.message.replace(/^babble: /, '')); }
   const sounding = result.plan.units.filter((u) => u.kind !== 'rest').length;
   if (!sounding) fail(`nothing to say in ${JSON.stringify(text)}`);
-  const out = opts.out ?? `${slug(text)}.${slug(voice.name)}.wav`;
+  const out = opts.out ?? `${slug(text)}.${slug(bank ? bank.name : voice.name)}.wav`;
   if (path.dirname(out) !== '.') fs.mkdirSync(path.dirname(out), { recursive: true });
   fs.writeFileSync(out, encodeWav(result.samples, sampleRate));
   if (opts.plan) fs.writeFileSync(opts.plan, JSON.stringify({ ...result.plan, segs: undefined, reveal: revealSchedule(result.plan) }, null, 1));
   if (!opts.quiet) {
-    console.log(`${out}  ${(result.samples.length / sampleRate).toFixed(2)} s  ${voice.name} (${voice.mode}, tongue ${voice.tongue})`);
+    console.log(`${out}  ${(result.samples.length / sampleRate).toFixed(2)} s  ${voice.name} (${voice.mode}, tongue ${voice.tongue})${bank ? `  bank ${bank.name}, tape x${(voice.pitch / 140).toFixed(2)}` : ''}`);
     console.log(`  ${result.plan.units.filter((u) => u.kind !== 'rest').map((u) => u.label).join(' ')}`);
   }
   if (opts.play) play(out);

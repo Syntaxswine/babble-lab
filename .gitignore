@@ -3,3 +3,6 @@ audition/
 out/
 *.log
 .DS_Store
+# voice banks are cut from recordings that carry their own licence (the Glades of Arcadia
+# score is non-commercial): they are made locally, never committed with the MIT code
+banks/
