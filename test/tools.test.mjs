@@ -1,0 +1,192 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import vm from 'node:vm';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+import { plan, render, makeTongue, applyTongue, MANNER_CLASSES, PHONEMES, decodeWav, parseScript, renderScript, randomVoice, compactVoice, resolveVoice } from '../src/index.mjs';
+import { createSpeaker } from '../src/runtime.mjs';
+import { buildAll } from '../tools/build-standalone.mjs';
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const cli = (...args) => spawnSync(process.execPath, [path.join(root, 'bin/babble.mjs'), ...args], { encoding: 'utf8', cwd: os.tmpdir() });
+
+// ------------------------------------------------------------------ tongue
+test('tongue: 0 is identity; any other is a bijection that never leaves its manner class', () => {
+  const zero = makeTongue(0);
+  for (const ph of Object.keys(PHONEMES)) assert.equal(zero[ph], ph);
+  for (const seed of [1, 2, 42, 9999]) {
+    const map = makeTongue(seed);
+    assert.equal(new Set(Object.values(map)).size, Object.keys(PHONEMES).length, `tongue ${seed} is not one-to-one`);
+    for (const [from, to] of Object.entries(map)) assert.equal(PHONEMES[to].manner, PHONEMES[from].manner, `tongue ${seed}: ${from} -> ${to} changes manner`);
+    assert.equal(map.AX, 'AX', 'schwa moved: function-word reduction would not survive the cipher');
+    assert.deepEqual(makeTongue(seed), map, 'same seed, different tongue');
+  }
+  const moved = Object.entries(makeTongue(42)).filter(([a, b]) => a !== b).length;
+  assert.ok(moved >= 15, `tongue 42 only moves ${moved} phonemes — that is barely a language`);
+  assert.notDeepEqual(makeTongue(42), makeTongue(43));
+  assert.ok(Object.keys(MANNER_CLASSES).length >= 10);
+});
+
+test('tongue: changes the sounds, keeps the rhythm and the character spans', () => {
+  const text = 'Have you seen my little brother anywhere?';
+  const a = plan(text, { tongue: 0 });
+  const b = plan(text, { tongue: 42 });
+  const sounding = (p) => p.units.filter((u) => u.kind !== 'rest');
+  assert.equal(sounding(a).length, sounding(b).length);
+  assert.deepEqual(sounding(a).map((u) => [u.c0, u.c1, u.stress]), sounding(b).map((u) => [u.c0, u.c1, u.stress]));
+  assert.notDeepEqual(sounding(a).map((u) => u.label), sounding(b).map((u) => u.label));
+  // the same word says the same thing wherever it appears
+  const twice = sounding(plan('dragon, dragon!', { tongue: 42 }));
+  assert.deepEqual(twice.slice(0, 2).map((u) => u.phones), twice.slice(2, 4).map((u) => u.phones));
+  assert.deepEqual(applyTongue(['D', 'R', 'AE', 'G'], 0), ['D', 'R', 'AE', 'G']);
+});
+
+test('a syllabary voice says only its own syllables, the same ones for the same word', () => {
+  const p = plan('Welcome, stranger. Welcome!', 'wah');
+  const said = p.units.filter((u) => u.kind === 'syl');
+  const bank = new Set(resolveVoice('wah').syllabary.map((s) => s.join(' ')));
+  for (const u of said) assert.ok(bank.has(u.phones.join(' ')), `"${u.label}" is not in the wah bank`);
+  assert.deepEqual(said.slice(0, 2).map((u) => u.phones), said.slice(-2).map((u) => u.phones));
+});
+
+test('rolled voices are valid, reproducible, and survive the compact round trip', () => {
+  for (const seed of [1, 7, 80445, 99999]) {
+    const v = randomVoice(seed);
+    assert.deepEqual(randomVoice(seed), v);
+    assert.deepEqual(resolveVoice(compactVoice(v)), v, `seed ${seed}: compactVoice lost something`);
+    const { samples } = render('Testing, one two three!', v);
+    assert.ok(samples.every(Number.isFinite));
+  }
+});
+
+// ------------------------------------------------------------------ script
+test('script: parses "name: line", renders with a cast, refuses an unknown speaker', () => {
+  const lines = parseScript('# scene 1\nMira: Did you hear that?\n\nGuard: Hear what: the wind?\n');
+  assert.deepEqual(lines, [{ who: 'Mira', text: 'Did you hear that?' }, { who: 'Guard', text: 'Hear what: the wind?' }]);
+  const out = renderScript(lines, { Mira: 'pixie', Guard: { preset: 'gruff', pitch: 78 } });
+  assert.equal(out.length, 2);
+  assert.equal(out[1].plan.voice.pitch, 78);
+  assert.throws(() => renderScript(lines, { Mira: 'pixie' }), /"Guard", who is not in the cast/);
+  assert.throws(() => parseScript('just some text'), /not "name: text"/);
+});
+
+// ------------------------------------------------------------------ CLI
+test('cli: writes a WAV that decodes, a plan, and a script manifest', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'babble-test-'));
+  try {
+    const wav = path.join(dir, 'who.wav');
+    const planFile = path.join(dir, 'who.json');
+    const r = cli('Who goes there?', '--voice', 'gruff', '--set', 'range=8', '--set', 'fx.echo=0.2', '-o', wav, '--plan', planFile, '--quiet');
+    assert.equal(r.status, 0, r.stderr);
+    const { samples, sampleRate } = decodeWav(fs.readFileSync(wav));
+    assert.equal(sampleRate, 44100);
+    assert.ok(samples.length > 20000);
+    const saved = JSON.parse(fs.readFileSync(planFile, 'utf8'));
+    assert.equal(saved.voice.range, 8);
+    assert.equal(saved.voice.fx.echo, 0.2);
+    assert.equal(saved.reveal[saved.reveal.length - 1].chars, 'Who goes there?'.length);
+
+    fs.writeFileSync(path.join(dir, 'lines.txt'), 'Mira: Hello!\nGuard: Halt.\n');
+    fs.writeFileSync(path.join(dir, 'cast.json'), JSON.stringify({ Mira: 'pixie', Guard: 'gruff' }));
+    const s = cli('script', path.join(dir, 'lines.txt'), '--cast', path.join(dir, 'cast.json'), '-o', path.join(dir, 'out'), '--quiet');
+    assert.equal(s.status, 0, s.stderr);
+    const manifest = JSON.parse(fs.readFileSync(path.join(dir, 'out', 'manifest.json'), 'utf8'));
+    assert.deepEqual(manifest.lines.map((l) => l.file), ['001-mira.wav', '002-guard.wav']);
+    for (const l of manifest.lines) { assert.ok(fs.existsSync(path.join(dir, 'out', l.file))); assert.equal(l.reveal[l.reveal.length - 1][1], l.text.length); }
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('cli: refuses what it does not understand, and says why', () => {
+  for (const [args, why] of [
+    [['hi', '--voice', 'nobody'], /neither a preset/],
+    [['hi', '--set', 'bogus=1'], /no knob called "bogus"/],
+    [['hi', '--set', 'pitch=loud'], /not a number/],
+    [['hi', '--frobnicate'], /unknown option/],
+    [['hi', '-o'], /needs a value/],
+    [['...'], /nothing to say/],
+    [['script', 'nope.txt'], /needs --cast/],
+  ]) {
+    const r = cli(...args);
+    assert.equal(r.status, 2, `${args.join(' ')} -> exit ${r.status}`);
+    assert.match(r.stderr, why);
+  }
+  assert.match(cli('voices').stdout, /gruff +syllable/);
+  assert.equal(JSON.parse(cli('roll', '7').stdout).name, 'rolled-7');
+});
+
+// ------------------------------------------------------------------ build
+test('build: dist/ is current, self-contained, and renders the same samples as src/', () => {
+  const built = buildAll();
+  for (const [file, text] of Object.entries(built)) {
+    const onDisk = fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n');
+    assert.ok(onDisk === text, `${file} is stale — run "npm run build" and commit it`);
+  }
+  const html = built['dist/babble-lab.html'];
+  assert.ok(!/^\s*(import|export)\s/m.test(html.slice(html.indexOf('<script'))), 'a module statement survived into the inline script');
+  assert.ok(!/<link[^>]+stylesheet|<script[^>]+src=/.test(html), 'the standalone page still fetches another file');
+  assert.equal((html.match(/<\/script>/g) ?? []).length, 1, 'something closed the inline script early');
+
+  const sandbox = { performance, console };
+  sandbox.globalThis = sandbox;
+  vm.createContext(sandbox);
+  vm.runInContext(built['dist/babble.global.js'], sandbox);
+  for (const [text, voice] of [['Who goes there?', 'gruff'], ['beep boop', 'blip'], ['Zarkoth!', { preset: 'pixie', tongue: 42 }]]) {
+    const a = render(text, voice).samples;
+    const b = sandbox.Babble.render(text, voice).samples;
+    assert.equal(a.length, b.length);
+    assert.ok(a.every((s, i) => s === b[i]), `global bundle renders "${text}" differently from the modules`);
+  }
+  assert.equal(typeof sandbox.Babble.createSpeaker, 'function');
+});
+
+// ------------------------------------------------------------------ runtime
+// A fake WebAudio clock, and a requestAnimationFrame that NEVER fires — which is
+// what this project's own preview pane does while reporting document.hidden ===
+// false. The first runtime revealed text only from rAF: it sat at 0 characters
+// for the whole line and jumped to the end on `ended`.
+function fakeAudio() {
+  const t0 = performance.now();
+  return {
+    sampleRate: 22050,
+    get currentTime() { return (performance.now() - t0) / 1000; },
+    destination: {},
+    createBuffer: (ch, n, sr) => { const data = new Float32Array(n); return { length: n, sampleRate: sr, duration: n / sr, getChannelData: () => data }; },
+    createGain: () => ({ gain: { value: 1 }, connect(x) { return x; } }),
+    createBufferSource() {
+      const src = { buffer: null, onended: null, connect(x) { return x; }, start() { src.timer = setTimeout(() => src.onended?.(), src.buffer.duration * 1000 + 25); }, stop() { clearTimeout(src.timer); } };
+      return src;
+    },
+  };
+}
+
+test('runtime: text keeps pace with the voice even when requestAnimationFrame never fires', async () => {
+  globalThis.requestAnimationFrame = () => 0;
+  globalThis.cancelAnimationFrame = () => {};
+  try {
+    const speaker = createSpeaker(fakeAudio());
+    const text = 'Have you seen my little brother anywhere?';
+    const seen = [];
+    const line = speaker.say(text, { rate: 1.6 }, { onReveal: (chars, shown) => { seen.push(chars); assert.equal(shown, text.slice(0, chars)); } });
+    assert.ok(speaker.speaking);
+    assert.equal(await line.done, 'ended');
+    assert.equal(seen[0], 0);
+    assert.equal(seen[seen.length - 1], text.length);
+    for (let k = 1; k < seen.length; k++) assert.ok(seen[k] > seen[k - 1], 'reveal went backwards');
+    const between = seen.filter((c) => c > 0 && c < text.length).length;
+    assert.ok(between >= 8, `text was revealed in ${between} intermediate steps: it is not following the voice`);
+    assert.ok(!speaker.speaking);
+
+    // stop() ends the line early and still shows all of it; a new line cuts the old one off
+    const cut = [];
+    const first = speaker.say(text, 'gruff', { onReveal: (c) => cut.push(c) });
+    const second = speaker.say('Halt!', 'gruff');
+    assert.equal(await first.done, 'stopped');
+    assert.equal(cut[cut.length - 1], text.length);
+    second.stop();
+    assert.equal(await second.done, 'stopped');
+    assert.throws(() => createSpeaker({}), /needs an AudioContext/);
+  } finally { delete globalThis.requestAnimationFrame; delete globalThis.cancelAnimationFrame; }
+});

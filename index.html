@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>babble-lab</title>
+<link rel="stylesheet" href="workbench/style.css">
+</head>
+<body>
+<header>
+  <h1>babble-lab</h1>
+  <p>text in, video-game voice out &middot; <span id="status">ready</span></p>
+</header>
+
+<main>
+  <section id="left">
+    <label class="cap" for="line">the line</label>
+    <textarea id="line" rows="3" spellcheck="false">Welcome to the village, stranger! Have you seen my little brother anywhere?</textarea>
+    <div id="samples" class="row wrap" aria-label="sample lines"></div>
+
+    <div class="row">
+      <button id="speak" class="primary" title="Ctrl+Enter">speak</button>
+      <button id="stop">stop</button>
+      <button id="take" title="the same line, said again: varies only the small human stuff">another take</button>
+      <button id="wav">save .wav</button>
+      <label class="check"><input type="checkbox" id="auto" checked> speak on change</label>
+    </div>
+
+    <div class="cap">as a game would show it</div>
+    <div id="typewriter" aria-live="off"><span id="shown"></span><span id="hidden"></span></div>
+
+    <div class="cap">the score <span class="dim">&mdash; spectrogram, syllables as said, pitch in semitones. click to play from there.</span></div>
+    <div id="scorewrap"><canvas id="score" height="330"></canvas></div>
+    <div id="readout" class="dim">&nbsp;</div>
+  </section>
+
+  <section id="right">
+    <div class="row">
+      <label class="cap inline" for="preset">voice</label>
+      <select id="preset"></select>
+      <button id="roll" title="roll a whole character from one number">roll</button>
+      <span id="note" class="dim"></span>
+    </div>
+    <div class="row">
+      <span class="cap inline">mode</span><span id="modes" class="seg"></span>
+      <label class="cap inline" for="wave">source</label><select id="wave"></select>
+    </div>
+    <div id="blipRow" class="row" hidden>
+      <label class="knob"><span>blip length</span><input type="range" id="blipLen" min="0.01" max="0.2" step="0.005"><output id="blipLenOut"></output></label>
+      <label class="knob"><span>blip every</span><input type="range" id="blipEvery" min="1" max="4" step="1"><output id="blipEveryOut"></output></label>
+    </div>
+    <div id="knobs"></div>
+
+    <details id="jsonbox">
+      <summary class="cap">this voice as JSON <span class="dim">&mdash; what you paste into a game</span></summary>
+      <textarea id="json" rows="7" spellcheck="false"></textarea>
+      <div class="row"><button id="copy">copy</button><button id="apply">apply edits</button><span id="jsonmsg" class="dim"></span></div>
+    </details>
+
+    <details id="castbox" open>
+      <summary class="cap">cast <span class="dim">&mdash; voices kept in this browser</span></summary>
+      <div class="row"><input id="castName" placeholder="name this voice" maxlength="40"><button id="castSave">keep</button><button id="castExport">export cast.json</button></div>
+      <ul id="cast"></ul>
+    </details>
+  </section>
+</main>
+
+<footer class="dim">
+  Same text, same voice, same seed &rarr; the same samples, here and in <code>node bin/babble.mjs</code>.
+  <kbd>Ctrl</kbd>+<kbd>Enter</kbd> speaks.
+</footer>
+<script type="module" src="workbench/app.mjs"></script>
+</body>
+</html>

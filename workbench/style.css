@@ -1,0 +1,60 @@
+/* A field notebook, not a DAW: small type, thin rules, low saturation. The
+   spectrogram is the spectacle; the chrome stays out of its way. */
+:root {
+  --paper: #f6f3ea; --panel: #efebdf; --ink: #2b2a27; --dim: #7d786b; --rule: #cfc9b8;
+  --accent: #9a4a2f; --accent-ink: #fff8ef; --mark: #5b6b73;
+  color-scheme: light dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --paper: #1d1c19; --panel: #262420; --ink: #d9d3c5; --dim: #8d877a; --rule: #3c3932; --accent: #c98a6b; --accent-ink: #1d1c19; --mark: #8fa3ad; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; padding: 14px 18px 24px; background: var(--paper); color: var(--ink); font: 12px/1.5 ui-monospace, "Cascadia Mono", Consolas, Menlo, monospace; }
+header { display: flex; align-items: baseline; gap: 14px; border-bottom: 1px solid var(--rule); padding-bottom: 6px; margin-bottom: 12px; }
+h1 { font-size: 14px; margin: 0; font-weight: 600; letter-spacing: 0.04em; }
+header p { margin: 0; color: var(--dim); }
+main { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(300px, 1fr); gap: 22px; }
+@media (max-width: 880px) { main { grid-template-columns: minmax(0, 1fr); } }
+.cap { display: block; margin: 12px 0 4px; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--mark); }
+.cap.inline { display: inline; margin: 0 6px 0 0; }
+.cap .dim, summary .dim { text-transform: none; letter-spacing: 0; }
+.dim { color: var(--dim); }
+.row { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; margin: 6px 0; }
+.row.wrap { gap: 4px 6px; }
+button, .check { white-space: nowrap; }
+textarea, input[type="text"], input:not([type]), select { font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--rule); border-radius: 2px; padding: 5px 7px; }
+textarea { width: 100%; resize: vertical; }
+#line { font-size: 14px; line-height: 1.45; }
+button { font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--rule); border-radius: 2px; padding: 3px 10px; cursor: pointer; }
+button:hover { border-color: var(--mark); }
+button:focus-visible, select:focus-visible, textarea:focus-visible, input:focus-visible { outline: 1px solid var(--accent); outline-offset: 1px; }
+button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+button.chip { padding: 1px 7px; color: var(--dim); font-size: 11px; }
+.check { color: var(--dim); display: inline-flex; align-items: center; gap: 4px; margin-left: auto; }
+#typewriter { min-height: 3.2em; padding: 8px 10px; border: 1px solid var(--rule); background: var(--panel); font-size: 14px; line-height: 1.45; white-space: pre-wrap; }
+#hidden { color: transparent; }
+#scorewrap { border: 1px solid var(--rule); background: var(--panel); }
+#score { display: block; width: 100%; height: 330px; cursor: crosshair; }
+#readout { height: 1.5em; margin-top: 2px; }
+.seg { display: inline-flex; margin-right: 12px; }
+.seg button { border-radius: 0; margin-left: -1px; }
+.seg button:first-child { border-radius: 2px 0 0 2px; margin-left: 0; }
+.seg button:last-child { border-radius: 0 2px 2px 0; }
+.seg button[aria-pressed="true"] { background: var(--mark); color: var(--paper); border-color: var(--mark); }
+fieldset { border: 0; border-top: 1px solid var(--rule); margin: 10px 0 0; padding: 4px 0 0; }
+legend { padding: 0 8px 0 0; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--mark); }
+.knob { display: grid; grid-template-columns: 92px minmax(0, 1fr) 58px; align-items: center; gap: 8px; margin: 1px 0; }
+.knob span { color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.knob output { text-align: right; color: var(--dim); font-variant-numeric: tabular-nums; }
+.knob input[type="range"] { width: 100%; accent-color: var(--accent); height: 14px; margin: 0; }
+.knob.changed span { color: var(--accent); }
+details { margin-top: 12px; border-top: 1px solid var(--rule); }
+summary { cursor: pointer; margin-top: 6px; }
+#json { font-size: 11px; }
+#cast { list-style: none; margin: 4px 0 0; padding: 0; }
+#cast li { display: flex; align-items: center; gap: 8px; padding: 2px 0; border-bottom: 1px dotted var(--rule); }
+#cast li .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#castName { flex: 1; min-width: 0; }
+footer { margin-top: 18px; border-top: 1px solid var(--rule); padding-top: 6px; }
+kbd, code { font: inherit; border: 1px solid var(--rule); border-radius: 2px; padding: 0 3px; background: var(--panel); }
+[hidden] { display: none !important; }
