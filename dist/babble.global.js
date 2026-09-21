@@ -1835,7 +1835,7 @@ function polyBlep(t, dt) {
   return 0;
 }
 
-// One cycle of the chosen waveform at phase p in [0,1).
+// One cycle of the chosen waveform at phase p in [0,1). (Exported for the aliasing test.)
 function wave(kind, p, dt, oq) {
   switch (kind) {
     case 'glottal': {
@@ -2084,7 +2084,7 @@ function renderPlan(plan, opts = {}) {
   return samples;
 }
 
-return { VOICED_RMS, renderPlan };
+return { VOICED_RMS, wave, renderPlan };
 })();
 // ---- src/wav.mjs
 __m["src/wav.mjs"] = (() => {

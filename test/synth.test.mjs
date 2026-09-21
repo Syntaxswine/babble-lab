@@ -6,9 +6,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { render, plan, PRESETS, resolveVoice, encodeWav, decodeWav, revealAt, revealSchedule, PHONEMES } from '../src/index.mjs';
-import { VOICED_RMS } from '../src/synth.mjs';
+import { VOICED_RMS, wave } from '../src/synth.mjs';
 import { softLimit, applyFx } from '../src/fx.mjs';
-import { rms, db, pitch, formants, nearestRatio, centroid, bandRatioDb } from '../tools/analyze.mjs';
+import { rms, db, pitch, formants, nearestRatio, centroid, bandRatioDb, magnitude } from '../tools/analyze.mjs';
+import { mulberry32 } from '../src/rng.mjs';
+import { PARAMS, FX_PARAMS, MODES, WAVES } from '../src/voices.mjs';
 
 const SR = 44100;
 const LINES = ['Welcome to the village, stranger!', "Hmm... I don't know. Have you seen my little brother anywhere?", 'NO! Get out, get OUT!'];
@@ -280,4 +282,57 @@ test('a voice is validated: unknown names refuse, numbers clamp', () => {
   assert.equal(resolveVoice({ pitch: 'loud' }).pitch, 140);
   assert.equal(resolveVoice({ preset: 'gruff', pitch: 70 }).pitch, 70);
   assert.equal(resolveVoice({ preset: 'gruff', pitch: 70 }).growl, PRESETS.gruff.growl);
+});
+
+// Energy that is NOT on a harmonic of f0 is aliasing: it sounds like grit that
+// moves against the pitch. A band-limited step (polyBLEP) at each discontinuity
+// is what keeps it down, and its SIGN matters: measured on the glottal pulse,
+// the shipped +0.5 gives -32.7 dB at 698 Hz, no BLEP -16.9 dB, a flipped sign
+// -11.4 dB — worse than nothing. The naive saw below is the control that shows
+// this measurement can come out bad.
+function inharmonicDb(gen, f0) {
+  const N = 65536;
+  const x = new Float32Array(N);
+  const dt = f0 / SR;
+  let p = 0;
+  for (let i = 0; i < N; i++) { p += dt; if (p >= 1) p -= 1; x[i] = gen(p, dt); }
+  const mag = magnitude(x, 0, N);
+  let harm = 0, other = 0;
+  for (let b = 8; b < mag.length; b++) {
+    const f = (b * SR) / N;
+    const h = Math.round(f / f0);
+    if (h >= 1 && Math.abs(f - h * f0) < 6 * (SR / N)) harm += mag[b] ** 2; else other += mag[b] ** 2;
+  }
+  return 10 * Math.log10(other / harm);
+}
+
+test('sources are band-limited: little energy off the harmonics, even pitched high', () => {
+  for (const f0 of [523.25, 698.46]) {
+    for (const kind of ['glottal', 'saw', 'square', 'pulse']) {
+      const d = inharmonicDb((p, dt) => wave(kind, p, dt, 0.6), f0);
+      assert.ok(d < -26, `${kind} at ${f0} Hz: ${d.toFixed(1)} dB of its energy is off-harmonic`);
+    }
+    const naive = inharmonicDb((p) => 2 * p - 1, f0);
+    assert.ok(naive > -22, `control: a naive saw measured ${naive.toFixed(1)} dB — the metric is not seeing aliasing`);
+  }
+});
+
+test('fuzz: extreme random voices over awkward text never break the contract', () => {
+  const r = mulberry32(20260920);
+  const texts = ['', ' ', '...', '?!', 'a', 'Hmm.', 'shh', 'HP: 300/500 (max)', 'NOOOOOOO!!!', "don't — can't... won't?", 'x'.repeat(40), '東京 привет naïve café', '🙂 ok 🙂', "'''", 'a-b-c-d', ['well...', '', '...yes?'].join(String.fromCharCode(10)), '1,000,000.5 & 7%'];
+  for (let k = 0; k < 68; k++) {
+    const v = { mode: MODES[Math.floor(r() * 3)], wave: WAVES[Math.floor(r() * WAVES.length)], fx: {}, blip: { len: 0.01 + r() * 0.3, every: 1 + Math.floor(r() * 5) } };
+    for (const p of PARAMS) v[p.key] = r() < 0.5 ? (r() < 0.5 ? p.min : p.max) : p.min + r() * (p.max - p.min);
+    for (const p of FX_PARAMS) v.fx[p.key] = r() < 0.6 ? p.def : r() < 0.5 ? p.max : p.min + r() * (p.max - p.min);
+    const text = texts[k % texts.length];
+    const where = `case ${k}, text ${JSON.stringify(text)}, voice ${JSON.stringify(v)}`;
+    const { samples, plan: p } = render(text, v, { sampleRate: [8000, 22050, 44100, 48000][k % 4], seed: k });
+    let peak = 0;
+    for (const s of samples) { assert.ok(Number.isFinite(s), `non-finite sample: ${where}`); peak = Math.max(peak, Math.abs(s)); }
+    assert.ok(peak < 1, `peak ${peak}: ${where}`);
+    assert.equal(revealAt(p, p.duration), text.length, `reveal incomplete: ${where}`);
+    let pos = 0;
+    for (const u of p.units) { assert.equal(u.c0, pos, `character spans leave a gap: ${where}`); pos = u.c1; }
+    if (p.units.length) assert.equal(pos, text.length, `character spans stop short: ${where}`);
+  }
 });

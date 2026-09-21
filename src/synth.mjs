@@ -38,8 +38,8 @@ function polyBlep(t, dt) {
   return 0;
 }
 
-// One cycle of the chosen waveform at phase p in [0,1).
-function wave(kind, p, dt, oq) {
+// One cycle of the chosen waveform at phase p in [0,1). (Exported for the aliasing test.)
+export function wave(kind, p, dt, oq) {
   switch (kind) {
     case 'glottal': {
       // derivative of the KLGLOTT88 flow pulse x² − x³ over the open phase; the
