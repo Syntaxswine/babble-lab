@@ -25,6 +25,8 @@ button, .check { white-space: nowrap; }
 textarea, input[type="text"], input:not([type]), select { font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--rule); border-radius: 2px; padding: 5px 7px; }
 textarea { width: 100%; resize: vertical; }
 #line { font-size: 14px; line-height: 1.45; }
+#duration { width: 85px; font: inherit; padding: 4px; color: var(--ink); background: var(--panel); border: 1px solid var(--rule); }
+button:disabled { opacity: 0.45; cursor: default; }
 button { font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--rule); border-radius: 2px; padding: 3px 10px; cursor: pointer; }
 button:hover { border-color: var(--mark); }
 button:focus-visible, select:focus-visible, textarea:focus-visible, input:focus-visible { outline: 1px solid var(--accent); outline-offset: 1px; }

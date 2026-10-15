@@ -117,6 +117,30 @@ test('cli: refuses what it does not understand, and says why', () => {
   assert.equal(JSON.parse(cli('roll', '7').stdout).name, 'rolled-7');
 });
 
+test('cli: animation timing and mouth cues survive WAV/plan export', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'babble-cues-'));
+  try {
+    const text = 'Your mission is to take out the central relay station.';
+    const timingPath = path.join(root, 'examples/animal-factory/handler.timing.json');
+    const wav = path.join(dir, 'handler.wav'), score = path.join(dir, 'handler.json');
+    const r = cli(text, '--voice', 'hen-radio', '--timing', timingPath, '-o', wav, '--plan', score, '--quiet');
+    assert.equal(r.status, 0, r.stderr);
+    const saved = JSON.parse(fs.readFileSync(score));
+    const audio = decodeWav(fs.readFileSync(wav));
+    assert.deepEqual(saved.mouth.map((c) => [c.t0, c.t1]), JSON.parse(fs.readFileSync(timingPath)).cues);
+    assert.equal(saved.audioDuration, audio.samples.length / audio.sampleRate);
+    assert.equal(saved.reveal.at(-1).chars, text.length);
+    const fitted = cli('Hello', '--voice', 'hen', '--duration', '1', '-o', wav, '--plan', score, '--quiet');
+    assert.equal(fitted.status, 0, fitted.stderr);
+    assert.equal(JSON.parse(fs.readFileSync(score)).duration, 1);
+    assert.equal(cli('Hello', '--duration', 'NaN', '-o', wav).status, 2);
+    assert.equal(cli('Hello', '--timing', timingPath, '-o', wav).status, 2);
+  } finally {
+    assert.equal(path.dirname(path.resolve(dir)), path.resolve(os.tmpdir()));
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('cli: cuts a recording into a bank, speaks with it, and refuses a file that is not one', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'babble-bank-'));
   try {

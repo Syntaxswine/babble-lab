@@ -4,7 +4,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { render, renderScript, parseScript, resolveVoice, randomVoice, compactVoice, revealSchedule, encodeWav, makeBank, encodeBank, decodeBank, DEFAULT_PIECE, PRESETS, PARAMS, FX_PARAMS } from '../src/index.mjs';
+import { render, renderScript, parseScript, resolveVoice, randomVoice, compactVoice, revealSchedule, mouthCues, encodeWav, makeBank, encodeBank, decodeBank, DEFAULT_PIECE, PRESETS, PARAMS, FX_PARAMS } from '../src/index.mjs';
 
 const USAGE = `babble — text in, video-game voice out
 
@@ -28,6 +28,8 @@ options
   --note <text>              bank: credit / licence line to store inside it
   --sr <hz>                  sample rate                                      [44100]
   --plan <file.json>         also write the timed plan (units, pitch, reveal schedule)
+  --duration <seconds>      fit the score to this duration without shifting pitch
+  --timing <file.json>      { cues: [[start, end], ...] } for animation syllables
   -o, --out <path>           output .wav (or output directory, for "script")
   --play                     play it when done
   --quiet
@@ -58,7 +60,7 @@ function fail(msg) { console.error(`babble: ${msg}`); process.exit(2); }
 
 function parseArgs(argv) {
   const opts = { set: [], positional: [] };
-  const takesValue = new Set(['--voice', '--set', '--tongue', '--take', '--weights', '--sr', '--plan', '-o', '--out', '--cast', '--bank', '--segment', '--note', '--rate']);
+  const takesValue = new Set(['--voice', '--set', '--tongue', '--take', '--weights', '--sr', '--plan', '-o', '--out', '--cast', '--bank', '--segment', '--note', '--rate', '--duration', '--timing']);
   const flags = new Set(['--play', '--quiet', '--help', '-h']);
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -108,6 +110,16 @@ function loadWeights(opts) {
   try { return JSON.parse(fs.readFileSync(opts.weights, 'utf8')); } catch (e) { fail(`--weights ${opts.weights}: ${e.message}`); }
 }
 
+function loadTiming(opts) {
+  let timing;
+  if (opts.timing) {
+    try { timing = JSON.parse(fs.readFileSync(opts.timing, 'utf8')); } catch (e) { fail(`--timing: ${e.message}`); }
+    if (!timing || typeof timing !== 'object' || Array.isArray(timing)) fail('--timing needs an object with cues and/or duration');
+  }
+  if (opts.duration !== undefined) timing = { ...timing, duration: Number(opts.duration) };
+  return timing;
+}
+
 function play(file) {
   const abs = path.resolve(file);
   const tries = process.platform === 'win32'
@@ -144,6 +156,7 @@ if (cmd === 'voices' && rest.length === 0) {
     if (!opts.quiet) { console.log(`${target}  ${bank.segments.length} pieces of ${bank.segmentSeconds} s: ${Object.entries(bank.looks).map(([k, v]) => `${k} ${v.length}`).join(', ')}`); console.log(sheet); }
   } catch (e) { fail(e.message.replace(/^(bank|look): /, '')); }
 } else if (cmd === 'script') {
+  if (opts.timing || opts.duration !== undefined) fail('--timing and --duration apply to a single line; render each timed line separately');
   if (rest.length !== 1) fail('script wants exactly one lines file');
   if (!opts.cast) fail('script needs --cast cast.json');
   let lines, cast;
@@ -158,7 +171,7 @@ if (cmd === 'voices' && rest.length === 0) {
     const file = `${String(r.index + 1).padStart(3, '0')}-${slug(r.who)}.wav`;
     fs.writeFileSync(path.join(dir, file), encodeWav(r.samples, r.sampleRate));
     if (!opts.quiet) console.log(`${file}  ${r.plan.duration.toFixed(2)} s  ${r.who}: ${r.text}`);
-    return { file, who: r.who, text: r.text, voice: r.plan.voice.name, duration: +(r.samples.length / r.sampleRate).toFixed(4), reveal: revealSchedule(r.plan).map((s) => [+s.t.toFixed(4), s.chars]) };
+    return { file, who: r.who, text: r.text, voice: r.plan.voice.name, duration: +(r.samples.length / r.sampleRate).toFixed(4), mouth: mouthCues(r.plan), reveal: revealSchedule(r.plan).map((s) => [+s.t.toFixed(4), s.chars]) };
   });
   fs.writeFileSync(path.join(dir, 'manifest.json'), JSON.stringify({ sampleRate, lines: manifest }, null, 1));
   if (!opts.quiet) console.log(`${manifest.length} lines -> ${dir}${path.sep}manifest.json`);
@@ -168,13 +181,13 @@ if (cmd === 'voices' && rest.length === 0) {
   const sampleRate = Number(opts.sr ?? 44100);
   let result;
   const bank = loadBank(opts);
-  try { result = render(text, voice, { sampleRate, weights: loadWeights(opts), seed: Number(opts.take ?? 0), bank }); } catch (e) { fail(e.message.replace(/^babble: /, '')); }
+  try { result = render(text, voice, { sampleRate, weights: loadWeights(opts), seed: Number(opts.take ?? 0), bank, timing: loadTiming(opts) }); } catch (e) { fail(e.message.replace(/^babble: /, '')); }
   const sounding = result.plan.units.filter((u) => u.kind !== 'rest').length;
   if (!sounding) fail(`nothing to say in ${JSON.stringify(text)}`);
   const out = opts.out ?? `${slug(text)}.${slug(bank ? bank.name : voice.name)}.wav`;
   if (path.dirname(out) !== '.') fs.mkdirSync(path.dirname(out), { recursive: true });
   fs.writeFileSync(out, encodeWav(result.samples, sampleRate));
-  if (opts.plan) fs.writeFileSync(opts.plan, JSON.stringify({ ...result.plan, segs: undefined, reveal: revealSchedule(result.plan) }, null, 1));
+  if (opts.plan) fs.writeFileSync(opts.plan, JSON.stringify({ ...result.plan, segs: undefined, audioDuration: result.samples.length / sampleRate, mouth: mouthCues(result.plan), reveal: revealSchedule(result.plan) }, null, 1));
   if (!opts.quiet) {
     console.log(`${out}  ${(result.samples.length / sampleRate).toFixed(2)} s  ${voice.name} (${voice.mode}, tongue ${voice.tongue})${bank ? `  bank ${bank.name}, tape x${(voice.pitch / 140).toFixed(2)}` : ''}`);
     console.log(`  ${result.plan.units.filter((u) => u.kind !== 'rest').map((u) => u.label).join(' ')}`);

@@ -1,13 +1,13 @@
 // The workbench. Type a line, shape a voice, watch and hear what the engine does
 // with it. Everything audible comes from ../src — this file only draws and plays.
 
-import { render, resolveVoice, randomVoice, compactVoice, encodeWav, makeBank, encodeBank, decodeBank, recut, PRESETS, PARAMS, FX_PARAMS, MODES, WAVES } from '../src/index.mjs';
+import { render, resolveVoice, randomVoice, compactVoice, encodeWav, makeBank, encodeBank, decodeBank, recut, revealSchedule, mouthCues, PRESETS, PARAMS, FX_PARAMS, MODES, WAVES } from '../src/index.mjs';
 import { createSpeaker } from '../src/runtime.mjs';
 import { spectrogram } from './spectro.mjs';
 
 const $ = (id) => document.getElementById(id);
 const CAST_KEY = 'babble-lab:cast:v1';
-const SAMPLES = ['Welcome to the village, stranger!', 'Really?', 'Really.', 'No way. NO WAY!', 'Hmm... let me think.', 'Pay 300 gold, or leave.', 'I used to be an adventurer like you.', 'Sooooo... what now?', 'Zarkoth the Undying demands tribute!'];
+const SAMPLES = ['Your mission is to take out the central relay station.', 'Welcome to the village, stranger!', 'Really?', 'Really.', 'No way. NO WAY!', 'Hmm... let me think.', 'Pay 300 gold, or leave.', 'I used to be an adventurer like you.', 'Sooooo... what now?', 'Zarkoth the Undying demands tribute!'];
 
 let voice = resolveVoice('narrator');
 let rendered = null; // { samples, sampleRate, plan }
@@ -18,6 +18,7 @@ let playing = null;
 let take = 0;
 let timer = 0;
 let bank = null; // a decoded voice bank, if one is loaded
+let cueTiming = null;
 const bankInUse = () => (bank && $('bankOn').checked ? bank : undefined);
 
 // ------------------------------------------------------------------ audio
@@ -27,11 +28,21 @@ function audio() {
   return speaker;
 }
 const sampleRate = () => (ctx ? ctx.sampleRate : 44100);
+const timing = () => $('duration').value === '' ? cueTiming ?? undefined : { ...cueTiming, duration: Number($('duration').value) };
 
 function refresh() {
   const text = $('line').value;
   const t0 = performance.now();
-  rendered = render(text, voice, { sampleRate: sampleRate(), seed: take, bank: bankInUse() });
+  try {
+    rendered = render(text, voice, { sampleRate: sampleRate(), seed: take, bank: bankInUse(), timing: timing() });
+  } catch (error) {
+    rendered = null; grid = null; image = null;
+    $('status').textContent = error.message;
+    $('wav').disabled = $('cues').disabled = true;
+    draw();
+    return false;
+  }
+  $('wav').disabled = $('cues').disabled = false;
   grid = null;
   const ms = performance.now() - t0;
   const units = rendered.plan.units.filter((u) => u.kind !== 'rest');
@@ -41,11 +52,13 @@ function refresh() {
   if (units.length && bankInUse()) $('status').textContent += ` · bank ${bank.name}, tape ×${(voice.pitch / 140).toFixed(2)}`;
   showReveal(text.length);
   draw();
+  return true;
 }
 
 function speak(fromTime = 0) {
   const sp = audio();
-  if (!rendered || rendered.sampleRate !== ctx.sampleRate) refresh();
+  clearTimeout(timer);
+  if (!refresh()) return;
   if (!rendered.plan.units.some((u) => u.kind !== 'rest')) return;
   stop();
   const text = $('line').value;
@@ -61,7 +74,7 @@ function speak(fromTime = 0) {
     playing = { stop: () => { try { src.stop(); } catch { /* done */ } }, get time() { return ctx.currentTime - startAt + fromTime; } };
     src.onended = () => { if (playing && playing.stop) playing = null; draw(); };
   } else {
-    playing = sp.say(text, voice, { seed: take, bank: bankInUse(), onReveal: (chars) => showReveal(chars), onEnd: () => { playing = null; draw(); } });
+    playing = sp.say(text, voice, { seed: take, bank: bankInUse(), timing: timing(), onReveal: (chars) => showReveal(chars), onEnd: () => { playing = null; draw(); } });
   }
   requestAnimationFrame(animate);
 }
@@ -79,6 +92,7 @@ function showReveal(chars) {
 }
 
 function changed({ speakNow = true } = {}) {
+  stop();
   clearTimeout(timer);
   timer = setTimeout(() => { refresh(); syncJson(); if (speakNow && $('auto').checked && ctx) speak(); }, 140);
 }
@@ -302,11 +316,41 @@ function init() {
   for (const s of SAMPLES) { const b = Object.assign(document.createElement('button'), { className: 'chip', textContent: s.length > 26 ? s.slice(0, 24) + '…' : s, title: s }); b.addEventListener('click', () => { $('line').value = s; take = 0; audio(); changed(); }); $('samples').append(b); }
 
   $('line').addEventListener('input', () => { take = 0; changed({ speakNow: false }); });
+  $('duration').addEventListener('input', () => changed({ speakNow: false }));
+  $('timingPick').addEventListener('click', () => $('timingFile').click());
+  $('timingFile').addEventListener('change', async () => {
+    const file = $('timingFile').files[0];
+    $('timingFile').value = '';
+    if (!file) return;
+    try {
+      const parsed = JSON.parse(await file.text());
+      const savedUnits = Array.isArray(parsed?.units) ? parsed.units.filter((u) => u.kind !== 'rest') : parsed?.mouth;
+      const imported = parsed?.timing ?? (Array.isArray(savedUnits) && savedUnits.length ? { duration: parsed.duration, cues: savedUnits.map((c) => [c.t0, c.t1]) } : parsed);
+      if (!imported || typeof imported !== 'object' || (imported.cues === undefined && imported.duration === undefined)) throw new Error('Expected { cues: [[start, end], ...] }, { duration }, or an exported cues file.');
+      render($('line').value, voice, { sampleRate: sampleRate(), seed: take, bank: bankInUse(), timing: imported });
+      cueTiming = imported.cues ? { cues: imported.cues } : null;
+      $('duration').value = imported.duration ?? '';
+      $('timingNote').textContent = cueTiming ? `${cueTiming.cues.length} syllable/letter cues loaded from ${file.name}` : `Duration loaded from ${file.name}`;
+      changed({ speakNow: false });
+    } catch (error) { $('timingNote').textContent = `Timing not loaded: ${error.message}`; }
+  });
+  $('timingClear').addEventListener('click', () => { cueTiming = null; $('duration').value = ''; $('timingNote').textContent = 'Natural timing restored.'; changed({ speakNow: false }); });
   $('line').addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); speak(); } });
   $('speak').addEventListener('click', () => speak());
   $('stop').addEventListener('click', () => { stop(); draw(); });
   $('take').addEventListener('click', () => { take++; audio(); refresh(); speak(); });
-  $('wav').addEventListener('click', () => { if (!rendered) refresh(); download(`${slug($('line').value)}.${slug(voice.name)}.wav`, encodeWav(rendered.samples, rendered.sampleRate), 'audio/wav'); });
+  $('wav').addEventListener('click', () => { if (!refresh()) return; download(`${slug($('line').value)}.${slug(voice.name)}.wav`, encodeWav(rendered.samples, rendered.sampleRate), 'audio/wav'); });
+  $('cues').addEventListener('click', () => {
+    if (!refresh()) return;
+    const p = rendered.plan;
+    const units = p.units.filter((u) => u.kind !== 'rest');
+    download(`${slug(p.text)}.${slug(voice.name)}.cues.json`, JSON.stringify({
+      text: p.text, voice: compactVoice(p.voice), take,
+      timing: { duration: p.duration, ...(units.length ? { cues: units.map((u) => [u.t0, u.t1]) } : {}) }, sampleRate: rendered.sampleRate,
+      duration: p.duration, audioDuration: rendered.samples.length / rendered.sampleRate,
+      words: p.words, mouth: mouthCues(p), reveal: revealSchedule(p),
+    }, null, 2), 'application/json');
+  });
   $('bankPick').addEventListener('click', () => $('bankFile').click());
   $('bankFile').addEventListener('change', () => { const f = $('bankFile').files[0]; if (f) loadBankFile(f); $('bankFile').value = ''; });
   $('bankOn').addEventListener('change', () => changed());

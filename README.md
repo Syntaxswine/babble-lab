@@ -89,8 +89,8 @@ tension, breath, roughness, growl, nasality, wobble), **mouth** (how much
 consonants bite, how far vowels open, pauses), **language** (tongue, seed) and
 **effects** (bit-crush, sample-hold, ring-mod, radio band, tremolo, echo).
 
-15 presets: `narrator villager blip bigblip gruff pixie elder robot mumble ghost
-imp beast radio wah grunt`. `roll` makes a whole character from one number.
+17 presets: `narrator villager blip bigblip gruff pixie elder robot mumble ghost
+imp beast radio hen hen-radio wah grunt`. `roll` makes a whole character from one number.
 
 A voice can also carry a **syllabary** — a small bank of syllables it says
 *instead of* the text's own sounds (`wah`: every syllable is "wah"; `grunt`: five
@@ -114,6 +114,88 @@ entry is picked by `hash(word, syllable)`, so the same word always says the same
 
 Nothing is appended after the last sound: a clip ends when the voice does. How
 long to wait before the next line is the game's decision.
+
+---
+
+## Cutscene timing and animal voices
+
+`hen` is a small cluck syllabary that keeps the text's syllable count, stress
+and punctuation. `hen-radio` is the **same character** through the radio band,
+without added bit crushing. These are stylized synthetic game voices, not
+recordings or models of a real chicken. Existing presets are unchanged.
+
+The workbench now has **fit score to**, **load timing.json**, **reset timing**,
+and **save cues.json**. Fitting changes the score before synthesis, so shortening
+a line does not raise its pitch. A timing file can set a duration or give one
+`[start, end]` pair per syllable (per letter in letter/blip mode), in seconds
+relative to the clip. Gaps between cues become pauses. Invalid cue counts,
+overlaps, and backwards times report an error instead of guessing. Reset timing
+returns to natural delivery. A saved cues file can be loaded again, alongside
+its text and voice.
+
+```js
+import { render, mouthAt, mouthCues } from './src/index.mjs';
+
+// A one-second score, keeping the character's pitch and mouth size.
+const short = render('Who goes there?', 'hen', { timing: { duration: 1 } });
+
+// Two syllables, with a pause between them. Cues override natural word gaps.
+const timed = render('Hello', 'hen', {
+  timing: { cues: [[0.1, 0.3], [0.5, 0.8]] },
+});
+const open = mouthAt(timed.plan, 0.2);  // 0..1, closes during pauses
+const track = mouthCues(timed.plan);  // serializable openings for another engine
+```
+
+`timing.duration` is the **score duration**, including its release. Synthesis
+adds 40 ms of filter settling; echo can add a longer tail. Exports report
+`audioDuration` separately so a cutscene can leave enough room. With explicit
+cues and no duration, the score retains the original release after the last
+cue (normally 30 ms). If both are given, duration must reach the final cue.
+These controls work with sample banks too; they do not time-stretch a recording,
+so a bank still needs enough original audio after its chosen starting point.
+
+```bash
+node bin/babble.mjs "Hello" --voice hen --duration 1 -o hello.wav --plan hello.json
+node bin/babble.mjs "Your mission is to take out the central relay station." --voice hen-radio --timing examples/animal-factory/handler.timing.json -o handler.wav --plan handler.json
+```
+
+CLI plans and script manifests include `mouth` cues. In the browser runtime,
+`say` and `prepare` accept `timing`; `say` also accepts an absolute AudioContext
+`when` and `onMouth(open, clipTime, plan)` callback. The returned handle exposes
+`startAt`. Use that audio clock to drive a cutscene. Stopping a speaker stops
+**all** its overlapping lines, disconnects their audio nodes, and closes their
+mouth callbacks. A normal non-overlapping `say` also stops all older lines.
+Cache entries distinguish timing, weights, gain, effects and recording identity;
+replace a bank object or call `clearCache()` after editing its samples in place.
+
+### Audition against Animal Factory Tactics
+
+```bash
+npm run audition:animal-factory
+# Include the actual chicken shot from a local game checkout:
+npm run audition:animal-factory -- --game ../AnimalFactory3D/game
+```
+
+Open `audition/animal-factory/index.html`. It compares the original narrator,
+the hen with natural timing, the hen fitted to the beak, and the fitted radio
+hen. Playback can match average signal level across takes so volume alone does
+not decide the comparison. Downloaded WAVs retain their original level.
+
+The example uses the handler's line at scene time 4.95 s and its 14 syllables,
+including a 100 ms pause. With `--game`, the generator verifies the game's
+speech cues before copying the `room-02` sprite sequence into the ignored
+audition folder. It reads the game without changing it. Without a game checkout,
+the page works as an audio-only audition. Artwork is never added to the bundle.
+
+The original narrator differs from those animation boundaries by up to **266 ms**;
+the natural hen by **469 ms**; the cue-fitted versions have **zero scheduled
+boundary error**. These are timing measurements, not a listening verdict.
+`report.json` records peak, RMS, duration and cue error. Tests check finite,
+unclipped samples, an audible signal in every slot, a quiet pause, measured
+pitch preservation, and module/bundle parity. Listen to the four takes to judge
+character and sound quality; this example does not claim to reproduce an
+existing game soundtrack.
 
 ---
 

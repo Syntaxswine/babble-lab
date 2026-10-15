@@ -13,7 +13,8 @@
     "test": "node --test \"test/*.test.mjs\"",
     "build": "node tools/build-standalone.mjs",
     "serve": "node tools/serve.mjs",
-    "audition": "node tools/audition.mjs"
+    "audition": "node tools/audition.mjs",
+    "audition:animal-factory": "node tools/animal-factory.mjs"
   },
   "engines": { "node": ">=20" },
   "license": "MIT"

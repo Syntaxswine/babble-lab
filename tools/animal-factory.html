@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Babble Lab · Animal Factory audition</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#171f1c;color:#eee7d5;font:16px/1.5 system-ui,sans-serif}main{max-width:1180px;margin:auto;padding:28px}header{border-bottom:1px solid #425046;padding-bottom:18px;margin-bottom:20px}.eyebrow{font:12px monospace;color:#d3b46f;letter-spacing:.12em}h1{font:normal 32px Georgia,serif;margin:8px 0}p{margin:8px 0;color:#bfc8bc}.layout{display:grid;grid-template-columns:minmax(0,1fr) 310px;gap:24px}canvas{display:block;width:100%;background:#202d25;border:1px solid #425046;border-radius:6px}audio{width:100%;margin:15px 0}.choice{display:block;width:100%;text-align:left;margin-bottom:8px;padding:12px;border:1px solid #425046;background:#222e27;color:inherit;border-radius:5px;font:inherit;cursor:pointer}.choice[aria-pressed=true]{border-color:#d3b46f;background:#344033}.choice small{display:block;color:#bfc8bc;font:12px monospace;margin-top:4px}.primary{padding:9px 16px;background:#d3b46f;color:#171f1c;border:0;border-radius:4px;font:inherit;cursor:pointer}.caption{font:22px/1.4 Georgia,serif;margin:16px 0;color:#eee7d5}.links{display:flex;gap:16px;margin:16px 0}a{color:#dfbf79}#clock,#metrics{font:12px/1.7 monospace;color:#bfc8bc}footer{border-top:1px solid #425046;margin-top:24px;padding-top:12px;font-size:13px}button:focus-visible,a:focus-visible{outline:2px solid #dfbf79;outline-offset:3px}@media(max-width:800px){main{padding:16px}.layout{grid-template-columns:1fr}h1{font-size:26px}}
+</style></head><body><main>
+<header><div class="eyebrow">BABBLE LAB / ANIMAL FACTORY TACTICS</div><h1>The hen at the microphone</h1><p>Compare the voice, the radio colour, and the fit to the beak animation.</p></header>
+<div class="layout"><section>
+<canvas id="scene" width="1600" height="900" aria-label="Chicken microphone shot from the introduction"></canvas>
+<audio id="audio" controls preload="auto"></audio>
+<button id="replay" class="primary">Play selected take</button> <span id="clock"></span>
+<p><label><input id="level" type="checkbox" checked> Match average listening level between takes</label></p>
+<p class="caption" id="caption"></p>
+</section><aside><div id="choices"></div><p id="note"></p><div id="metrics"></div>
+<div class="links"><a id="wav" download>Voice WAV</a><a id="cues" download>Game cues JSON</a></div>
+<p id="status" role="status">Loading reference…</p></aside></div>
+<footer>Every take is generated locally by Babble Lab. The original narrator is the existing default engine, not an original game soundtrack. Cue error measures scheduled syllable boundaries, not perceived lip-sync or sound quality. Level matching adjusts playback volume using average signal energy; downloaded WAVs keep their original level. The voice-only WAV starts at the line; this player adds one second of pre-roll. <a href="report.json">Measurements</a></footer>
+</main><script>
+/*AUDITION_DATA*/
+const $=id=>document.getElementById(id), audio=$('audio'), canvas=$('scene'), g=canvas.getContext('2d');
+const {example,sequence,results}=DATA;
+let selected=0, images=[], ready=false, frame=0;
+const targetLevel=Math.min(...results.map(r=>r.rmsDbFS));
+function matchLevel(){audio.volume=$('level').checked?Math.pow(10,(targetLevel-results[selected].rmsDbFS)/20):1;}
+$('caption').textContent=example.text;
+function draw(){
+ const t=example.shotFrom+audio.currentTime;
+ $('clock').textContent=`scene ${t.toFixed(2)} s · speech starts ${example.sceneStart.toFixed(2)} s`;
+ g.clearRect(0,0,canvas.width,canvas.height);
+ if(ready&&sequence){
+  g.drawImage(images[0],0,0,canvas.width,canvas.height);
+  const f=sequence.frames.reduce((chosen,next)=>next.t<=t?next:chosen,sequence.frames[0]);
+  const [sheet,x,y,w,h]=f.sprite;
+  g.drawImage(images[sheet+1],x,y,w,h,sequence.rect[0],sequence.rect[1],w,h);
+ }else{
+  g.fillStyle='#202d25';g.fillRect(0,0,1600,900);g.fillStyle='#eee7d5';g.textAlign='center';g.font='34px Georgia';
+  g.fillText(sequence?'Loading the chicken shot…':'Audio audition · no game artwork supplied',800,420);
+ }
+}
+function tick(){draw();if(!audio.paused&&!audio.ended)frame=requestAnimationFrame(tick);}
+function choose(i){
+ audio.pause();cancelAnimationFrame(frame);selected=i;
+ const v=results[i];audio.src=v.sceneClip;audio.load();
+ matchLevel();
+ [...$('choices').children].forEach((b,k)=>b.setAttribute('aria-pressed',String(k===i)));
+ $('note').textContent=v.note;$('wav').href=v.clip;$('cues').href=v.cueFile;
+ $('metrics').textContent=`${v.audioSeconds.toFixed(2)} s voice WAV · peak ${v.peakDbFS.toFixed(1)} dBFS · maximum cue error ${v.maxCueErrorMs.toFixed(1)} ms`;
+ draw();
+}
+results.forEach((v,i)=>{const b=document.createElement('button');b.className='choice';b.textContent=v.label;const s=document.createElement('small');s.textContent=i<2?'natural rhythm':'14 animation cues · 100 ms pause';b.append(s);b.onclick=()=>choose(i);$('choices').append(b);});
+$('replay').onclick=async()=>{audio.currentTime=0;try{await audio.play();}catch(e){$('status').textContent=e.message;}};
+$('level').onchange=matchLevel;
+audio.onplay=()=>{cancelAnimationFrame(frame);tick();};audio.onpause=()=>{cancelAnimationFrame(frame);draw();};audio.onended=()=>{cancelAnimationFrame(frame);draw();};audio.onseeked=draw;audio.ontimeupdate=draw;
+audio.onerror=()=>{$('status').textContent='Could not load the audio. Keep the generated WAV files beside this page.';};
+choose(3);
+(async()=>{
+ if(sequence){
+  try{images=await Promise.all([sequence.plate,...sequence.sheets].map(name=>new Promise((resolve,reject)=>{const im=new Image();im.onload=()=>resolve(im);im.onerror=()=>reject(Error('Could not load '+name));im.src='reference/'+name;})));ready=true;$('status').textContent='Actual game shot · 20 fps · cue fixture verified';}
+  catch(e){$('status').textContent=e.message;}
+ }else $('status').textContent='Audio is ready. Generate with --game to include the actual chicken shot.';
+ draw();
+})();
+addEventListener('pagehide',()=>{audio.pause();cancelAnimationFrame(frame);});
+window.audition={get ready(){return ready||!sequence;},get selected(){return selected;},draw};
+</script></body></html>

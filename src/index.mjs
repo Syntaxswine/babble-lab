@@ -19,6 +19,7 @@ export function plan(text, voice, opts) {
 
 // opts: { sampleRate = 44100, seed = 0 (another take of the same line), gain = 1,
 //         weights (a tts-weights table), fx = true,
+//         timing: { duration (score seconds), cues ([[start, end], ...] per sounding unit) },
 //         bank (a decoded voice bank: speak with slices of a recording instead of the synth) }
 export function render(text, voice, opts = {}) {
   const p = makePlan(text, voice, opts);
@@ -62,4 +63,5 @@ export { makeBank, encodeBank, decodeBank, unarrange, recut, DEFAULT_PIECE } fro
 export { makeTongue, applyTongue, MANNER_CLASSES } from './tongue.mjs';
 export { analyze, tokenize, countSyllables, wordToSyllables } from './text.mjs';
 export { g2p } from './g2p.mjs';
+export { retimePlan, mouthCues, mouthAt } from './timing.mjs';
 export { PHONEMES, respell } from './phonemes.mjs';

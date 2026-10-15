@@ -14,6 +14,7 @@ import { PHONEMES, isVowel, respell, F4, F5 } from './phonemes.mjs';
 import { applyTongue } from './tongue.mjs';
 import { resolveVoice } from './voices.mjs';
 import { mulberry32, mixSeed, hashString } from './rng.mjs';
+import { retimePlan } from './timing.mjs';
 
 const SCHWA = [500, 1500, 2500];
 
@@ -371,7 +372,7 @@ export function makePlan(text, voiceIn, opts = {}) {
     if (w && w.index === u.wordIndex) { w.t1 = u.t1; w.c1 = u.c1; } else words.push({ index: u.wordIndex, text: u.word, t0: u.t0, t1: u.t1, c0: u.c0, c1: u.c1 });
   }
 
-  return {
+  return retimePlan({
     text, voice, seed, duration: t,
     units: units.map((u) => ({
       kind: u.kind, t0: u.t0, t1: u.t1, c0: u.c0, c1: u.c1,
@@ -379,7 +380,7 @@ export function makePlan(text, voiceIn, opts = {}) {
     })),
     words, segs, pitch,
     upper: [F4 * tract, F5 * tract],
-  };
+  }, opts.timing);
 }
 
 // How many characters of plan.text a typewriter should be showing at time t.

@@ -70,6 +70,10 @@ export const PRESETS = {
   imp: { wave: 'square', pitch: 300, tract: 1.3, rate: 1.25, range: 7, lilt: 0.4, tilt: 0.7, fx: { crush: 8, hold: 2 }, note: 'a square wave with a mouth: squeaky chip creature' },
   beast: { pitch: 60, tract: 0.68, rate: 0.7, range: 3, tilt: 0.3, oq: 0.42, rough: 0.6, growl: 0.7, articulation: 0.5, vowelSpace: 0.6, note: 'very large, mostly growl' },
   radio: { pitch: 118, rate: 1.05, range: 5, fx: { band: 1, crush: 10 }, note: 'the narrator through an intercom' },
+  hen: { pitch: 285, tract: 1.22, rate: 1.15, range: 6, lilt: 0.22, tilt: 0.43, oq: 0.48, rough: 0.12, nasal: 0.22, breath: 0.04, articulation: 0.8, wordGap: 0.012,
+    syllabary: [['K', 'UH'], ['K', 'AH', 'K'], ['B', 'UH', 'K'], ['K', 'AO'], ['G', 'UH'], ['K', 'IH']], note: 'a hen: short clucks following the syllables and expression of the line' },
+  'hen-radio': { pitch: 285, tract: 1.22, rate: 1.15, range: 6, lilt: 0.22, tilt: 0.43, oq: 0.48, rough: 0.12, nasal: 0.22, breath: 0.04, articulation: 0.8, wordGap: 0.012,
+    syllabary: [['K', 'UH'], ['K', 'AH', 'K'], ['B', 'UH', 'K'], ['K', 'AO'], ['G', 'UH'], ['K', 'IH']], fx: { band: 1 }, note: 'the same hen through a radio; compare with hen to judge the microphone colour' },
   wah: { wave: 'saw', pitch: 175, range: 8, lilt: 0.5, tilt: 0.3, nasal: 0.45, rate: 0.9, syllabary: [['W', 'AA'], ['W', 'AO'], ['W', 'AH'], ['M', 'W', 'AA']], note: 'muted-trombone grown-up: every syllable is "wah"' },
   grunt: { pitch: 92, tract: 0.8, rate: 0.85, range: 5, lilt: 0.4, rough: 0.35, growl: 0.3, nasal: 0.3, tilt: 0.35, syllabary: [['HH', 'AH'], ['G', 'ER'], ['AH', 'N'], ['HH', 'UH', 'M'], ['B', 'AH']], note: 'a small bank of grunts, chosen by the words' },
 };
