@@ -177,10 +177,19 @@ npm run audition:animal-factory
 npm run audition:animal-factory -- --game ../AnimalFactory3D/game
 ```
 
-Open `audition/animal-factory/index.html`. It compares the original narrator,
-the hen with natural timing, the hen fitted to the beak, and the fitted radio
-hen. Playback can match average signal level across takes so volume alone does
-not decide the comparison. Downloaded WAVs retain their original level.
+Open `audition/animal-factory/index.html`. Eight higher speech voices keep the
+original English phonemes while exploring pitch (290–420 Hz), brighter resonance,
+nasality, rasp, breath and a radio filter. Each follows the same animation cues.
+They are stored in `examples/animal-factory/voices.json`: Clear hen, Bright hen,
+Chirpy hen, Small hen, Throaty hen, Nasal hen, Soft hen and Bright hen · radio.
+The original four comparisons remain below them: narrator, natural clucks,
+clucks fitted to the beak, and the fitted radio hen.
+
+Click a voice to play it with the shot, or use Previous / Next voice. Playback
+can match average signal level across takes so volume alone does not decide
+the comparison. Downloaded WAVs retain their original level. Each take also
+exports a standalone voice JSON, ready for the workbench's voice JSON editor
+or `--voice file.json`; `cast.json` contains the whole audition cast.
 
 The example uses the handler's line at scene time 4.95 s and its 14 syllables,
 including a 100 ms pause. With `--game`, the generator verifies the game's
@@ -193,7 +202,7 @@ the natural hen by **469 ms**; the cue-fitted versions have **zero scheduled
 boundary error**. These are timing measurements, not a listening verdict.
 `report.json` records peak, RMS, duration and cue error. Tests check finite,
 unclipped samples, an audible signal in every slot, a quiet pause, measured
-pitch preservation, and module/bundle parity. Listen to the four takes to judge
+pitch preservation, and module/bundle parity. Listen to the takes to judge
 character and sound quality; this example does not claim to reproduce an
 existing game soundtrack.
 

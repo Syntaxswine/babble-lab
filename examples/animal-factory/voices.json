@@ -1,0 +1,176 @@
+[
+  {
+    "id": "clear-hen",
+    "label": "Clear hen",
+    "tag": "310 Hz · clear speech · light animal colour",
+    "note": "A higher speaking voice with lightly nasal resonance. Keeps the original English consonants and vowels.",
+    "voice": {
+      "preset": "narrator",
+      "name": "clear-hen",
+      "tongue": 0,
+      "syllabary": null,
+      "pitch": 310,
+      "tract": 1.16,
+      "range": 6,
+      "lilt": 0.15,
+      "tilt": 0.5,
+      "oq": 0.58,
+      "breath": 0.06,
+      "rough": 0.04,
+      "nasal": 0.15
+    }
+  },
+  {
+    "id": "bright-hen",
+    "label": "Bright hen",
+    "tag": "350 Hz · brighter resonance · firmer voice",
+    "note": "Higher pitch and a smaller vocal tract, with a little rasp and firmer consonants. A stronger hen character while retaining the words.",
+    "voice": {
+      "preset": "narrator",
+      "name": "bright-hen",
+      "tongue": 0,
+      "syllabary": null,
+      "pitch": 350,
+      "tract": 1.28,
+      "range": 7,
+      "lilt": 0.2,
+      "tilt": 0.57,
+      "oq": 0.5,
+      "breath": 0.04,
+      "rough": 0.07,
+      "nasal": 0.2
+    }
+  },
+  {
+    "id": "chirpy-hen",
+    "label": "Chirpy hen",
+    "tag": "385 Hz · lively pitch · slight flutter",
+    "note": "A more animated delivery with wider pitch movement and a small flutter. Still uses the text's English sounds.",
+    "voice": {
+      "preset": "narrator",
+      "name": "chirpy-hen",
+      "tongue": 0,
+      "syllabary": null,
+      "pitch": 385,
+      "tract": 1.3,
+      "range": 9,
+      "lilt": 0.32,
+      "tilt": 0.52,
+      "oq": 0.57,
+      "breath": 0.07,
+      "rough": 0.05,
+      "nasal": 0.18,
+      "vibDepth": 0.1,
+      "vibRate": 8
+    }
+  },
+  {
+    "id": "small-hen",
+    "label": "Small hen",
+    "tag": "420 Hz · highest pitch · small resonance",
+    "note": "The highest, smallest voice in this set. Compare whether the extra animal character is worth the change in word clarity.",
+    "voice": {
+      "preset": "narrator",
+      "name": "small-hen",
+      "tongue": 0,
+      "syllabary": null,
+      "pitch": 420,
+      "tract": 1.4,
+      "range": 6,
+      "lilt": 0.18,
+      "tilt": 0.48,
+      "oq": 0.62,
+      "breath": 0.05,
+      "rough": 0.03,
+      "nasal": 0.16
+    }
+  },
+  {
+    "id": "throaty-hen",
+    "label": "Throaty hen",
+    "tag": "330 Hz · pressed voice · rough edge",
+    "note": "A tighter, rougher delivery with a small low undertone, for a more throaty animal quality.",
+    "voice": {
+      "preset": "narrator",
+      "name": "throaty-hen",
+      "tongue": 0,
+      "syllabary": null,
+      "pitch": 330,
+      "tract": 1.17,
+      "range": 5,
+      "lilt": 0.16,
+      "tilt": 0.42,
+      "oq": 0.4,
+      "rough": 0.24,
+      "growl": 0.08,
+      "nasal": 0.3,
+      "breath": 0.08
+    }
+  },
+  {
+    "id": "nasal-hen",
+    "label": "Nasal hen",
+    "tag": "345 Hz · nasal resonance · light rasp",
+    "note": "Keeps a middle-high pitch but gives the voice a stronger nasal colour. The words and their articulation stay intact.",
+    "voice": {
+      "preset": "narrator",
+      "name": "nasal-hen",
+      "tongue": 0,
+      "syllabary": null,
+      "pitch": 345,
+      "tract": 1.24,
+      "range": 6,
+      "lilt": 0.17,
+      "tilt": 0.45,
+      "oq": 0.55,
+      "nasal": 0.5,
+      "rough": 0.08,
+      "breath": 0.04
+    }
+  },
+  {
+    "id": "soft-hen",
+    "label": "Soft hen",
+    "tag": "290 Hz · rounded · lightly breathy",
+    "note": "A gentler high voice with softer tone and a little breath, retaining full consonants and vowel shapes.",
+    "voice": {
+      "preset": "narrator",
+      "name": "soft-hen",
+      "tongue": 0,
+      "syllabary": null,
+      "pitch": 290,
+      "tract": 1.18,
+      "range": 5,
+      "lilt": 0.15,
+      "tilt": 0.32,
+      "oq": 0.74,
+      "breath": 0.17,
+      "rough": 0.02,
+      "nasal": 0.12
+    }
+  },
+  {
+    "id": "bright-hen-radio",
+    "label": "Bright hen · radio",
+    "tag": "350 Hz · same bright hen · radio filter",
+    "note": "The bright hen through the radio band, with no added bit crushing. Compare directly with Bright hen to judge the microphone colour.",
+    "voice": {
+      "preset": "narrator",
+      "name": "bright-hen-radio",
+      "tongue": 0,
+      "syllabary": null,
+      "pitch": 350,
+      "tract": 1.28,
+      "range": 7,
+      "lilt": 0.2,
+      "tilt": 0.57,
+      "oq": 0.5,
+      "breath": 0.04,
+      "rough": 0.07,
+      "nasal": 0.2,
+      "fx": {
+        "band": 1
+      }
+    }
+  }
+]
