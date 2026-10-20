@@ -179,8 +179,17 @@ npm run audition:animal-factory -- --game ../AnimalFactory3D/game
 npm run audition:animal-factory -- --game ../AnimalFactory3D/game --bank banks/glades-of-arcadia.bank.wav
 ```
 
-Open `audition/animal-factory/index.html`. With `--bank`, six music-slice takes
-appear first: bright (2×), chirpy (2.5×), tiny (3×), clucking, radio clucking,
+Open `audition/animal-factory/index.html`. With `--bank`, six **layered** takes
+appear first: the sliced voices over the earlier speech voices, using their
+existing performances and identical speech cues. The pairs are bright/bright,
+chirpy/chirpy, tiny/small, clucking/throaty, radio/radio and original-speed/clear.
+`examples/animal-factory/layers.json` sets these pairings and `slicesDb` (default
+−6): each sliced layer is matched to its speech layer's RMS, then reduced by
+6 dB. Both layers receive the same final attenuation if needed to keep the mix
+peak at or below 0.9. This preserves the balance without clipping. Neither
+engine is changed, and all original recordings remain available below.
+
+The six **music-slice** takes follow: bright (2×), chirpy (2.5×), tiny (3×), clucking, radio clucking,
 and original speed. These call the existing sampler unchanged, with the same
 14 animation cues. No formant voice is mixed into them. Their settings are in
 `examples/animal-factory/bank-voices.json`. Without `--bank`, the page contains
@@ -196,9 +205,14 @@ clucks fitted to the beak, and the fitted radio hen.
 
 Click a voice to play it with the shot, or use Previous / Next voice. Playback
 can match average signal level across takes so volume alone does not decide
-the comparison. Downloaded WAVs retain their original level. Each take also
+the comparison. Downloaded WAVs retain their exported level. Each single-source take also
 exports a standalone voice JSON, ready for the workbench's voice JSON editor
-or `--voice file.json`; `cast.json` contains the whole audition cast. A sliced
+or `--voice file.json`; `cast.json` contains these single-source presets. Layered
+takes export the finished WAV and a `.mix.json` recipe with both voices, source
+WAV names, timing and the actual linear gain for each layer. Reproduce a mix
+by rendering those voices at the recorded sample rate and timing, multiplying
+by their gains, and adding sample by sample. Mix recipes describe two voices;
+they are not single-voice presets for `--voice` or the workbench JSON editor. A sliced
 voice also needs its recording: the page offers the exact bank as
 `voice.bank.wav`, and its JSON names that bank. Load both in the workbench, or
 pass the downloaded bank with `--bank` on the command line. The page labels

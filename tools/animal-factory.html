@@ -15,10 +15,11 @@
 <p><label><input id="level" type="checkbox" checked> Match average listening level between takes</label></p>
 <p class="caption" id="caption"></p>
 </section><aside><div id="choices"></div><p id="note"></p><div id="metrics"></div>
-<div class="links"><a id="wav" download>Voice WAV</a><a id="voice" download>Voice JSON</a><a id="cues" download>Game cues JSON</a><a id="cast" href="cast.json" download>All voices</a><a id="bank" download hidden>Sample bank</a></div>
+<div class="links"><a id="wav" download>Voice WAV</a><a id="voice" download>Voice JSON</a><a id="cues" download>Game cues JSON</a><a id="cast" href="cast.json" download>Voice presets</a><a id="bank" download hidden>Sample bank</a></div>
+<p id="exportNote"></p>
 <p id="bankNote"></p>
 <p id="status" role="status">Loading reference…</p></aside></div>
-<footer>Music-slice takes use the existing recording sampler; formant takes use the synthesizer. The original narrator is the default formant voice, not an original game soundtrack. Cue error measures scheduled syllable boundaries, not perceived lip-sync or sound quality. Level matching adjusts playback volume using average signal energy; downloaded WAVs keep their original level. The voice-only WAV starts at the line; this player adds one second of pre-roll. <a href="report.json">Measurements</a></footer>
+<footer>Layered takes add the existing speech and music-slice recordings together on the same clock. Music-slice takes use the recording sampler; formant takes use the synthesizer. The original narrator is the default formant voice, not an original game soundtrack. Cue error measures scheduled syllable boundaries, not perceived lip-sync or sound quality. Level matching adjusts playback volume using average signal energy; downloaded WAVs keep their original level. The voice-only WAV starts at the line; this player adds one second of pre-roll. <a href="report.json">Measurements</a></footer>
 </main><script>
 /*AUDITION_DATA*/
 const $=id=>document.getElementById(id), audio=$('audio'), canvas=$('scene'), g=canvas.getContext('2d');
@@ -27,7 +28,7 @@ let selected=0, images=[], ready=false, frame=0;
 const targetLevel=Math.min(...results.map(r=>r.rmsDbFS));
 function matchLevel(){audio.volume=$('level').checked?Math.pow(10,(targetLevel-results[selected].rmsDbFS)/20):1;}
 $('caption').textContent=example.text;
-$('intro').textContent=DATA.bank?'Compare real music slices and formant speech in the hen’s microphone shot. Click a voice to hear it with the scene.':'Formant speech voices. No music sample bank was supplied for this audition.';
+$('intro').textContent=DATA.bank?'Hear the sliced voices layered over the earlier speech voices. Original takes are below for comparison.':'Formant speech voices. No music sample bank was supplied for this audition.';
 if(DATA.bank){
  $('bank').hidden=false;$('bank').href=DATA.bank.file;
  $('bankNote').textContent=`Bank: ${DATA.bank.source||DATA.bank.name} · ${DATA.bank.segments} pieces of ${DATA.bank.segmentSeconds} s. To reuse a sliced voice JSON, load this sample bank too.${DATA.bank.note?' '+DATA.bank.note:''}`;
@@ -52,9 +53,11 @@ function choose(i){
  const v=results[i];audio.src=v.sceneClip;audio.load();
  matchLevel();
  [...$('choices').querySelectorAll('button')].forEach((b,k)=>b.setAttribute('aria-pressed',String(k===i)));
- $('note').textContent=v.note;$('wav').href=v.clip;$('cues').href=v.cueFile;$('voice').href=v.voiceFile;
+ $('note').textContent=v.note;$('wav').href=v.clip;$('cues').href=v.cueFile;$('voice').href=v.recipeFile??v.voiceFile;
+ $('voice').textContent=v.recipe?'Mix recipe JSON':'Voice JSON';
+ $('exportNote').textContent=v.recipe?'Use the mixed WAV in your game. The mix recipe records both source voices and their volume settings.':'';
  $('takeName').textContent=`${i+1} / ${results.length} · ${v.label}`;
- $('source').textContent=v.engine==='sampler'?`Source: music slices · ${v.bank.source||v.bank.name} · ${((v.voice.pitch??140)/140).toFixed(2)}× base speed · ${v.used.length} slice selections`:'Source: formant synthesizer';
+ $('source').textContent=v.engine==='layered'?`Layers: ${v.recipe.layers.map(l=>l.label).join(' + ')}`:v.engine==='sampler'?`Source: music slices · ${v.bank.source||v.bank.name} · ${((v.voice.pitch??140)/140).toFixed(2)}× base speed · ${v.used.length} slice selections`:'Source: formant synthesizer';
  $('metrics').textContent=`${v.audioSeconds.toFixed(2)} s voice WAV · peak ${v.peakDbFS.toFixed(1)} dBFS · maximum cue error ${v.maxCueErrorMs.toFixed(1)} ms`;
  draw();
 }
@@ -70,9 +73,9 @@ function saveJSON(name,value){
  const url=URL.createObjectURL(new Blob([JSON.stringify(value,null,2)],{type:'application/json'}));
  const a=document.createElement('a');a.href=url;a.download=name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
-$('voice').onclick=e=>{e.preventDefault();const v=results[selected];saveJSON(v.voiceFile,v.voice);};
+$('voice').onclick=e=>{e.preventDefault();const v=results[selected];saveJSON(v.recipeFile??v.voiceFile,v.recipe??v.voice);};
 $('cues').onclick=e=>{e.preventDefault();const v=results[selected];saveJSON(v.cueFile,v.cueData);};
-$('cast').onclick=e=>{e.preventDefault();saveJSON('cast.json',Object.fromEntries(results.map(v=>[v.id,v.voice])));};
+$('cast').onclick=e=>{e.preventDefault();saveJSON('cast.json',Object.fromEntries(results.filter(v=>v.voice).map(v=>[v.id,v.voice])));};
 $('level').onchange=matchLevel;
 audio.onplay=()=>{cancelAnimationFrame(frame);tick();};audio.onpause=()=>{cancelAnimationFrame(frame);draw();};audio.onended=()=>{cancelAnimationFrame(frame);draw();};audio.onseeked=draw;audio.ontimeupdate=draw;
 audio.onerror=()=>{$('status').textContent='Could not load the audio. Keep the generated WAV files beside this page.';};

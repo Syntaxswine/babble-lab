@@ -7,6 +7,7 @@ import vm from 'node:vm';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { makeBank, encodeBank, decodeBank, encodeWav, decodeWav, render } from '../src/index.mjs';
+import { rms } from '../tools/analyze.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const generate = (...args) => spawnSync(process.execPath, [path.join(root, 'tools/animal-factory.mjs'), ...args], { encoding: 'utf8', timeout: 30000 });
@@ -24,7 +25,7 @@ test('scene audition exports the existing sampler output, its recording and all 
     const built = generate('--bank', bankPath, '-o', out);
     assert.equal(built.status, 0, built.stderr);
     const bank = decodeBank(bytes), report = readJSON(path.join(out, 'report.json'));
-    assert.equal(report.variants.length, 18);
+    assert.equal(report.variants.length, 24);
     assert.deepEqual(fs.readFileSync(path.join(out, report.bank.file)), Buffer.from(bytes));
     assert.equal(report.bank.source, 'fixture.wav');
     const sampled = report.variants.filter((v) => v.engine === 'sampler');
@@ -50,6 +51,42 @@ test('scene audition exports the existing sampler output, its recording and all 
     assert.equal(speech.voice.bank, undefined);
     const expectedSpeech = render(report.text, speech.voice, { sampleRate: report.sampleRate, timing: speech.cueData.timing });
     assert.deepEqual(fs.readFileSync(path.join(out, speech.clip)), Buffer.from(encodeWav(expectedSpeech.samples, expectedSpeech.sampleRate)));
+    const mixes = report.variants.filter((v) => v.engine === 'layered');
+    assert.equal(mixes.length, 6);
+    assert.equal(report.variants[0].engine, 'layered');
+    const cast = readJSON(path.join(out, 'cast.json'));
+    assert.equal(Object.keys(cast).length, 18);
+    for (const v of mixes) {
+      const recipe = readJSON(path.join(out, v.recipeFile));
+      const cues = readJSON(path.join(out, v.cueFile));
+      assert.equal(recipe.babbleMix, 1);
+      assert.deepEqual(cues.mix, recipe);
+      assert.equal(v.voiceFile, undefined);
+      assert.equal(v.voice, undefined);
+      assert.equal(cast[v.id], undefined);
+      assert.equal(recipe.layers.length, 2);
+      const sources = recipe.layers.map((l) => render(recipe.text, l.voice, {
+        sampleRate: recipe.sampleRate, timing: recipe.timing, bank: l.engine === 'sampler' ? bank : undefined,
+      }));
+      const [speechLayer, sliceLayer] = recipe.layers;
+      assert.ok(speechLayer.gain > 0 && sliceLayer.gain > 0);
+      const relativeDb = 20 * Math.log10(rms(sources[1].samples) * sliceLayer.gain / (rms(sources[0].samples) * speechLayer.gain));
+      assert.ok(Math.abs(relativeDb - recipe.slicesDb) < 1e-6);
+      const mixed = decodeWav(fs.readFileSync(path.join(out, v.clip)));
+      assert.equal(mixed.samples.length, sources[0].samples.length);
+      let maximumError = 0;
+      for (let i = 0; i < mixed.samples.length; i++) {
+        const expected = sources[0].samples[i] * speechLayer.gain + sources[1].samples[i] * sliceLayer.gain;
+        maximumError = Math.max(maximumError, Math.abs(mixed.samples[i] - expected));
+      }
+      assert.ok(maximumError < 2 / 32768, `${v.id}: exported recipe lost a layer or changed its gain`);
+      assert.ok(mixed.samples.every((x) => Number.isFinite(x) && Math.abs(x) <= 0.9001));
+      assert.equal(v.maxCueErrorMs, 0);
+      assert.equal(v.used.length, 14);
+      const scene = decodeWav(fs.readFileSync(path.join(out, v.sceneClip)));
+      assert.ok(scene.samples.subarray(0, scene.sampleRate).every((x) => x === 0));
+      assert.deepEqual(scene.samples.subarray(scene.sampleRate, scene.sampleRate + mixed.samples.length), mixed.samples);
+    }
     const html = fs.readFileSync(path.join(out, 'index.html'), 'utf8');
     const script = html.match(/<script>([\s\S]*?)<\/script>/)[1];
     new vm.Script(script); // generated data and the page script must parse together

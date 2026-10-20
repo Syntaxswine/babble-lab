@@ -12,6 +12,7 @@ const example = JSON.parse(fs.readFileSync(path.join(root, 'examples/animal-fact
 const timing = JSON.parse(fs.readFileSync(path.join(root, 'examples/animal-factory/handler.timing.json'), 'utf8'));
 const trials = JSON.parse(fs.readFileSync(path.join(root, 'examples/animal-factory/voices.json'), 'utf8'));
 const bankTrials = JSON.parse(fs.readFileSync(path.join(root, 'examples/animal-factory/bank-voices.json'), 'utf8'));
+const layering = JSON.parse(fs.readFileSync(path.join(root, 'examples/animal-factory/layers.json'), 'utf8'));
 let game, bankFile, out = path.join(root, 'audition/animal-factory');
 for (let i = 2; i < process.argv.length; i++) {
   const key = process.argv[i], value = process.argv[++i];
@@ -56,36 +57,73 @@ const variants = [
   { id: 'hen-cued', label: 'Hen · matched to beak', voice: 'hen', timing, note: 'The same hen, with every syllable fitted to the animation.' },
   { id: 'hen-radio-cued', label: 'Hen · radio + matched beak', voice: 'hen-radio', timing, note: 'The matched performance through the radio band. No added bit crushing.' },
 ];
-const results = variants.map((v) => {
-  const sampled = v.engine === 'sampler';
-  const r = render(example.text, v.voice, { sampleRate, timing: v.timing, bank: sampled ? bank : undefined });
+function saveTake(v, r) {
+  const layered = v.engine === 'layered', sampled = v.engine === 'sampler' || layered;
   const said = r.plan.units.filter((u) => u.kind !== 'rest');
   const maxCueErrorMs = Math.max(...said.flatMap((u, i) => [Math.abs(u.t0 - timing.cues[i][0]), Math.abs(u.t1 - timing.cues[i][1])])) * 1000;
   const peak = r.samples.reduce((m, x) => Math.max(m, Math.abs(x)), 0);
-  const clip = `${v.id}.wav`, sceneClip = `${v.id}.scene.wav`, cueFile = `${v.id}.cues.json`, voiceFile = `${v.id}.voice.json`;
-  const voice = compactVoice(r.plan.voice);
-  fs.writeFileSync(path.join(out, voiceFile), JSON.stringify(voice, null, 2));
+  const clip = `${v.id}.wav`, sceneClip = `${v.id}.scene.wav`, cueFile = `${v.id}.cues.json`;
+  const voiceFile = layered ? undefined : `${v.id}.voice.json`, recipeFile = layered ? `${v.id}.mix.json` : undefined;
+  const voice = layered ? undefined : compactVoice(r.plan.voice);
+  fs.writeFileSync(path.join(out, recipeFile ?? voiceFile), JSON.stringify(v.recipe ?? voice, null, 2));
   fs.writeFileSync(path.join(out, clip), encodeWav(r.samples, sampleRate));
   const scene = new Float32Array(Math.max(Math.ceil((example.shotTo - example.shotFrom) * sampleRate), Math.round(preRoll * sampleRate) + r.samples.length));
   scene.set(r.samples, Math.round(preRoll * sampleRate));
   fs.writeFileSync(path.join(out, sceneClip), encodeWav(scene, sampleRate));
   const cueData = {
-    text: example.text, voice, take: 0,
+    text: example.text, ...(layered ? { mix: v.recipe } : { voice }), take: 0,
     timing: { duration: r.plan.duration, cues: said.map((u) => [u.t0, u.t1]) }, sampleRate,
     sceneStart: example.sceneStart, duration: r.plan.duration, audioDuration: r.samples.length / sampleRate,
     words: r.plan.words, mouth: mouthCues(r.plan), reveal: revealSchedule(r.plan),
     ...(sampled ? { bank: bankInfo, used: r.used } : {}),
   };
   fs.writeFileSync(path.join(out, cueFile), JSON.stringify(cueData, null, 2));
-  return { ...v, engine: sampled ? 'sampler' : 'formant', group: v.group ?? 'EARLIER FORMANT TAKES',
+  return { ...v, engine: v.engine ?? 'formant', group: v.group ?? 'EARLIER FORMANT TAKES',
     ...(sampled ? { bank: bankInfo, used: r.used } : {}),
-    voice, clip, sceneClip, cueFile, voiceFile, cueData, scoreSeconds: r.plan.duration, audioSeconds: r.samples.length / sampleRate,
+    voice, clip, sceneClip, cueFile, voiceFile, recipeFile, cueData, scoreSeconds: r.plan.duration, audioSeconds: r.samples.length / sampleRate,
     maxCueErrorMs, peakDbFS: db(peak), rmsDbFS: db(rms(r.samples)), finite: r.samples.every(Number.isFinite) };
+}
+
+const rendered = new Map();
+const singles = variants.map((v) => {
+  const r = render(example.text, v.voice, { sampleRate, timing: v.timing, bank: v.engine === 'sampler' ? bank : undefined });
+  rendered.set(v.id, r);
+  return saveTake(v, r);
 });
+
+// Add the two existing performances on one sample clock. Neither source is
+// re-pitched, time-stretched or re-synthesized for layering.
+const mixes = bank ? layering.pairs.map((pair) => {
+  const speech = rendered.get(pair.speech), slices = rendered.get(pair.slices);
+  const speechTake = singles.find((v) => v.id === pair.speech), slicesTake = singles.find((v) => v.id === pair.slices);
+  const slots = (p) => p.units.filter((u) => u.kind !== 'rest').map((u) => [u.t0, u.t1]);
+  if (!speech || !slices || speechTake.engine !== 'formant' || slicesTake.engine !== 'sampler') throw new Error(`Invalid layer pairing: ${pair.id}`);
+  if (speech.samples.length !== slices.samples.length || JSON.stringify(slots(speech.plan)) !== JSON.stringify(slots(slices.plan))) throw new Error(`Layers must have matching speech cues and lengths: ${pair.id}`);
+  if (!Number.isFinite(layering.slicesDb)) throw new Error('layers.json: slicesDb must be a finite number');
+  const speechRms = rms(speech.samples), slicesRms = rms(slices.samples);
+  if (!(speechRms > 0 && slicesRms > 0)) throw new Error(`Cannot layer a silent take: ${pair.id}`);
+  const sliceGain = Math.pow(10, layering.slicesDb / 20) * speechRms / slicesRms;
+  const samples = Float32Array.from(speech.samples, (x, i) => x + slices.samples[i] * sliceGain);
+  const peak = samples.reduce((m, x) => Math.max(m, Math.abs(x)), 0);
+  // One common attenuation preserves the requested balance and leaves headroom.
+  const masterGain = Math.min(1, 0.9 / peak);
+  for (let i = 0; i < samples.length; i++) samples[i] *= masterGain;
+  const recipe = { babbleMix: 1, name: pair.id, text: example.text, sampleRate, take: 0, timing,
+    slicesDb: layering.slicesDb, bank: bankInfo,
+    layers: [
+      { id: pair.speech, label: speechTake.label, engine: 'formant', clip: speechTake.clip, voice: speechTake.voice, gain: masterGain },
+      { id: pair.slices, label: slicesTake.label, engine: 'sampler', clip: slicesTake.clip, voice: slicesTake.voice, gain: sliceGain * masterGain },
+    ] };
+  return saveTake({ id: pair.id, label: pair.label, engine: 'layered', group: 'LAYERED VOICES', timing, recipe,
+    tag: `Speech + music slices · slices ${layering.slicesDb} dB`,
+    note: `${speechTake.label} with ${slicesTake.label} overlaid. Both follow the same speech cues; the sliced layer is ${Math.abs(layering.slicesDb)} dB ${layering.slicesDb <= 0 ? 'below' : 'above'} the speech in average signal level.` },
+  { ...speech, samples, used: slices.used });
+}) : [];
+const results = [...mixes, ...singles];
 const report = { text: example.text, reference: sequence ? 'Local game room-02 sprite sequence; speech cues verified against the fixture' : 'No game assets supplied; timing fixture only',
   sceneStart: example.sceneStart, syllables: timing.cues.length, sampleRate, bank: bankInfo, variants: results };
 fs.writeFileSync(path.join(out, 'report.json'), JSON.stringify(report, null, 2));
-fs.writeFileSync(path.join(out, 'cast.json'), JSON.stringify(Object.fromEntries(results.map((v) => [v.id, v.voice])), null, 2));
+fs.writeFileSync(path.join(out, 'cast.json'), JSON.stringify(Object.fromEntries(singles.map((v) => [v.id, v.voice])), null, 2));
 
 const data = JSON.stringify({ example, sequence, results, bank: bankInfo }).replace(/</g, '\\u003c');
 const template = fs.readFileSync(path.join(root, 'tools/animal-factory.html'), 'utf8');

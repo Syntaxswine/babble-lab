@@ -1,0 +1,11 @@
+{
+  "slicesDb": -6,
+  "pairs": [
+    { "id": "layered-bright-hen", "label": "Layered hen · bright", "speech": "bright-hen", "slices": "sliced-bright-hen" },
+    { "id": "layered-chirpy-hen", "label": "Layered hen · chirpy", "speech": "chirpy-hen", "slices": "sliced-chirpy-hen" },
+    { "id": "layered-tiny-hen", "label": "Layered hen · tiny", "speech": "small-hen", "slices": "sliced-tiny-hen" },
+    { "id": "layered-clucking-hen", "label": "Layered hen · throaty clucks", "speech": "throaty-hen", "slices": "sliced-clucking-hen" },
+    { "id": "layered-radio-hen", "label": "Layered hen · radio", "speech": "bright-hen-radio", "slices": "sliced-radio-hen" },
+    { "id": "layered-original-speed", "label": "Layered hen · original-speed slices", "speech": "clear-hen", "slices": "sliced-original-speed" }
+  ]
+}
