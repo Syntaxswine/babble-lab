@@ -93,7 +93,7 @@ test('scene audition exports the existing sampler output, its recording and all 
     for (const v of morphs) {
       const recipe = readJSON(path.join(out, v.recipeFile));
       assert.equal(recipe.babbleMorph, 1);
-      assert.equal(recipe.settings.amount, 0.5);
+      assert.equal(recipe.settings.amount, 0.7);
       assert.deepEqual(readJSON(path.join(out, v.cueFile)).morph, recipe);
       assert.equal(v.voice, undefined);
       assert.equal(cast[v.id], undefined);

@@ -6,8 +6,8 @@ import { createMorphControl } from '../tools/audition-morph-control.mjs';
 import { bundle } from '../tools/build-standalone.mjs';
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 10));
-function take(id = 'hen') {
-  const recipe = { babbleMorph: 1, settings: { amount: 0.5 }, sources: [] };
+function take(id = 'hen', amount = 0.5) {
+  const recipe = { babbleMorph: 1, settings: { amount }, sources: [] };
   return { id, engine: 'morph', recipe, cueData: { morph: recipe, mouth: [{ t: 0.1, open: 1 }] },
     clip: `${id}.wav`, sceneClip: `${id}.scene.wav`, recipeFile: `${id}.morph.json`, cueFile: `${id}.cues.json` };
 }
@@ -151,7 +151,7 @@ test('page wires slider changes to playback and downloadable WAV, recipe and cue
   const elements = Object.fromEntries([...html.matchAll(/<(\w+)[^>]*\bid="([^"]+)"/g)].map((m) => [m[2], new Element(m[1])]));
   const audio = elements.audio, events = new Map(), timers = new Map(), blobs = new Map(), workers = [];
   let serial = 0;
-  const base = { ...take(), label: 'Morph hen', group: 'MORPHS', note: '', audioSeconds: 0.2, peakDbFS: -6, rmsDbFS: -20, maxCueErrorMs: 0 };
+  const base = { ...take('hen', 0.7), label: 'Morph hen', group: 'MORPHS', note: '', audioSeconds: 0.2, peakDbFS: -6, rmsDbFS: -20, maxCueErrorMs: 0 };
   base.recipe.sources = [{ id: 'speech', label: 'Speech' }, { id: 'slices', label: 'Slices' }];
   const original = { ...base, id: 'original', engine: 'formant', label: 'Original', group: 'ORIGINALS', recipe: undefined, voice: {}, voiceFile: 'original.voice.json', clip: 'original.wav', sceneClip: 'original.scene.wav' };
   const data = { example: { text: 'Hello', shotFrom: 0, shotTo: 2, sceneStart: 1 }, sequence: null,
@@ -176,6 +176,9 @@ test('page wires slider changes to playback and downloadable WAV, recipe and cue
   try {
     assert.equal(elements.morphControls.hidden, false);
     assert.equal(elements.wav.href, base.clip);
+    assert.equal(Number(elements.morphAmount.value), 70);
+    assert.equal(elements.resetMorph.textContent, 'Reset to 70%');
+    assert.equal(elements.resetMorph.attributes['aria-label'], 'Reset voice morph to 70 percent');
     elements.morphAmount.value = '73'; elements.morphAmount.oninput(); elements.morphAmount.onchange();
     assert.equal(elements.replay.disabled, true);
     assert.equal(elements.wav.href, undefined);
@@ -205,10 +208,10 @@ test('page wires slider changes to playback and downloadable WAV, recipe and cue
     buttons[0].onclick();
     assert.equal(Number(elements.morphAmount.value), 73);
     assert.equal(elements.wav.href, oldWav);
-    elements.midpoint.onclick();
+    elements.resetMorph.onclick();
     assert.equal(elements.wav.href, base.clip);
     assert.equal(blobs.has(oldWav), false);
-    assert.equal(Number(elements.morphAmount.value), 50);
+    assert.equal(Number(elements.morphAmount.value), 70);
     elements.morphAmount.value = '25'; elements.morphAmount.oninput(); runTimers();
     buttons[1].onclick(); workers[1].finish();
     assert.equal(workers[1].stopped, true);

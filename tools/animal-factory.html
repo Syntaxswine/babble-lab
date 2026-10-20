@@ -4,7 +4,7 @@
 <style>
 *{box-sizing:border-box}body{margin:0;background:#171f1c;color:#eee7d5;font:16px/1.5 system-ui,sans-serif}main{max-width:1180px;margin:auto;padding:28px}header{border-bottom:1px solid #425046;padding-bottom:18px;margin-bottom:20px}.eyebrow{font:12px monospace;color:#d3b46f;letter-spacing:.12em}h1{font:normal 32px Georgia,serif;margin:8px 0}p{margin:8px 0;color:#bfc8bc}.layout{display:grid;grid-template-columns:minmax(0,1fr) 310px;gap:24px}canvas{display:block;width:100%;background:#202d25;border:1px solid #425046;border-radius:6px}audio{width:100%;margin:15px 0}.choice{display:block;width:100%;text-align:left;margin-bottom:8px;padding:12px;border:1px solid #425046;background:#222e27;color:inherit;border-radius:5px;font:inherit;cursor:pointer}.choice[aria-pressed=true]{border-color:#d3b46f;background:#344033}.choice small{display:block;color:#bfc8bc;font:12px monospace;margin-top:4px}.primary{padding:9px 16px;background:#d3b46f;color:#171f1c;border:0;border-radius:4px;font:inherit;cursor:pointer}.caption{font:22px/1.4 Georgia,serif;margin:16px 0;color:#eee7d5}.links{display:flex;gap:16px;margin:16px 0}a{color:#dfbf79}#clock,#metrics{font:12px/1.7 monospace;color:#bfc8bc}footer{border-top:1px solid #425046;margin-top:24px;padding-top:12px;font-size:13px}button:focus-visible,a:focus-visible{outline:2px solid #dfbf79;outline-offset:3px}@media(max-width:800px){main{padding:16px}.layout{grid-template-columns:1fr}h1{font-size:26px}}
 .preview{position:sticky;top:20px;align-self:start}.controls{display:flex;align-items:center;flex-wrap:wrap;gap:8px}.secondary{padding:9px 12px;background:#222e27;color:#eee7d5;border:1px solid #425046;border-radius:4px;font:inherit;cursor:pointer}#choices{max-height:510px;overflow:auto;padding:2px 7px 2px 2px;scrollbar-color:#697b64 #222e27}.group{font:12px monospace;color:#d3b46f;margin:8px 0 12px;letter-spacing:.06em}#takeName{font:24px Georgia,serif;margin:14px 0 10px}.links{flex-wrap:wrap}@media(max-width:800px){.preview{position:static}#choices{max-height:430px}}
-.morph{padding:14px 16px;margin:16px 0;border:1px solid #697b64;border-radius:6px;background:#222e27}.morph-head,.morph-ends{display:flex;align-items:center;justify-content:space-between;gap:12px}.morph-head label{font-weight:600}.morph-head output{color:#dfbf79;font-variant-numeric:tabular-nums}.morph-ends{font-size:13px;color:#bfc8bc}.morph-ends span:last-child{text-align:right}#morphAmount{width:100%;margin:16px 0 8px;accent-color:#d3b46f;cursor:pointer}#morphHelp,#morphStatus{font-size:13px}#morphStatus{min-height:1.5em;color:#dfbf79}#midpoint{padding:4px 9px;font-size:13px}input:focus-visible{outline:2px solid #dfbf79;outline-offset:3px}button:disabled,a[aria-disabled=true],audio[aria-disabled=true]{opacity:.5;cursor:wait}audio[aria-disabled=true]{pointer-events:none}
+.morph{padding:14px 16px;margin:16px 0;border:1px solid #697b64;border-radius:6px;background:#222e27}.morph-head,.morph-ends{display:flex;align-items:center;justify-content:space-between;gap:12px}.morph-head label{font-weight:600}.morph-head output{color:#dfbf79;font-variant-numeric:tabular-nums}.morph-ends{font-size:13px;color:#bfc8bc}.morph-ends span:last-child{text-align:right}#morphAmount{width:100%;margin:16px 0 8px;accent-color:#d3b46f;cursor:pointer}#morphHelp,#morphStatus{font-size:13px}#morphStatus{min-height:1.5em;color:#dfbf79}#resetMorph{padding:4px 9px;font-size:13px}input:focus-visible{outline:2px solid #dfbf79;outline-offset:3px}button:disabled,a[aria-disabled=true],audio[aria-disabled=true]{opacity:.5;cursor:wait}audio[aria-disabled=true]{pointer-events:none}
 </style></head><body><main>
 <header><div class="eyebrow">BABBLE LAB / ANIMAL FACTORY TACTICS</div><h1>The hen at the microphone</h1><p id="intro">Compare voices in the same shot. Click a voice to hear it with the scene.</p></header>
 <div class="layout"><section class="preview">
@@ -13,8 +13,8 @@
 <h2 id="takeName"></h2>
 <p id="source"></p>
 <div id="morphControls" class="morph" hidden>
- <div class="morph-head"><label for="morphAmount">Voice morph</label><output id="morphValue" for="morphAmount">50%</output><button id="midpoint" class="secondary" aria-label="Reset voice morph to 50 percent">Reset to 50%</button></div>
- <input id="morphAmount" type="range" min="0" max="100" step="1" value="50" aria-describedby="morphHelp">
+ <div class="morph-head"><label for="morphAmount">Voice morph</label><output id="morphValue" for="morphAmount"></output><button id="resetMorph" class="secondary">Reset to default</button></div>
+ <input id="morphAmount" type="range" min="0" max="100" step="1" aria-describedby="morphHelp">
  <div class="morph-ends"><span>0% · Speech tone</span><span>100% · Sliced-audio tone</span></div>
  <p id="morphHelp">Pitch and timing stay with the speech. Release the slider to hear the new setting.</p>
  <p id="morphStatus" role="status" aria-live="polite"></p>
@@ -88,6 +88,9 @@ function showTake(state){
  audio.pause();cancelAnimationFrame(frame);
  $('morphControls').hidden=!isMorph;
  if(isMorph){
+  const defaultPercent=Math.round(state.base.recipe.settings.amount*100);
+  $('resetMorph').textContent=`Reset to ${defaultPercent}%`;
+  $('resetMorph').setAttribute('aria-label',`Reset voice morph to ${defaultPercent} percent`);
   $('morphAmount').value=percent;$('morphValue').textContent=percent+'%';
   $('morphAmount').setAttribute('aria-valuetext',`${percent}% toward sliced-audio tone`);
   $('morphStatus').textContent=state.status==='error'?`Could not render: ${state.error} Move the slider to try again.`:playable?`${percent}% ready · WAV and recipe use this setting`:`Rendering ${percent}%…`;
@@ -133,7 +136,7 @@ results.forEach((v,i)=>{
 $('replay').onclick=play;
 $('morphAmount').oninput=()=>{wantsPlay=false;morph.change(Number($('morphAmount').value)/100);};
 $('morphAmount').onchange=play;
-$('midpoint').onclick=()=>{wantsPlay=false;morph.change(0.5);play();};
+$('resetMorph').onclick=()=>{wantsPlay=false;morph.change(morph.current.base.recipe.settings.amount);play();};
 function advance(direction){choose((selected+direction+results.length)%results.length);$('choices').querySelectorAll('button')[selected].scrollIntoView({block:'nearest'});play();}
 $('previous').onclick=()=>advance(-1);$('next').onclick=()=>advance(1);
 function saveJSON(name,value){

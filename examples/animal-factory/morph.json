@@ -1,5 +1,5 @@
 {
-  "amount": 0.5,
+  "amount": 0.7,
   "windowSize": 2048,
   "hopSize": 256,
   "envelopeMs": 1,

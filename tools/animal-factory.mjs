@@ -137,7 +137,7 @@ const morphs = bank ? layering.pairs.map((pair) => {
     ] };
   return saveTake({ id, label: pair.label.replace('Layered hen', 'Morph hen'), engine: 'morph', group: 'ADJUSTABLE TIMBRE MORPHS', timing, recipe,
     tag: `${Math.round(morphing.amount * 100)}% tone-colour morph · speech pitch and timing`, morphMetrics: morph.metrics,
-    note: `${speechTake.label} with its spectral envelope moved ${Math.round(morphing.amount * 100)}% toward ${slicesTake.label}. Keeps the speech pitch and rhythm. This is a midpoint of measured tone colour; judge the character by listening.` },
+    note: `${speechTake.label} with its spectral envelope moved ${Math.round(morphing.amount * 100)}% toward ${slicesTake.label}. Keeps the speech pitch and rhythm. Adjust the amount with the audition slider.` },
   { ...speech, samples: morph.samples, used: slices.used });
 }) : [];
 const results = [...morphs, ...mixes, ...singles];
