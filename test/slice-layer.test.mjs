@@ -4,6 +4,9 @@ import { mixSliceLayer } from '../tools/mix-slice-layer.mjs';
 import { renderMorphTake } from '../tools/audition-morph-render.mjs';
 import { encodeWav } from '../src/wav.mjs';
 import { rms } from '../tools/analyze.mjs';
+import { Worker } from 'node:worker_threads';
+import { once } from 'node:events';
+import { bundle } from '../tools/build-standalone.mjs';
 
 test('slice overlay preserves the actual waveform, timing and mute endpoint', () => {
   const voice = new Float32Array([0.25, -0.25, 0, 0]);
@@ -17,6 +20,32 @@ test('slice overlay preserves the actual waveform, timing and mute endpoint', ()
   assert.equal(rms(voice) * full.metrics.voiceGain, rms(slices) * full.metrics.slicesGain);
   assert.deepEqual(voice, savedVoice);
   assert.deepEqual(slices, savedSlices);
+});
+
+test('the cached worker survives transferable audio replies and reuses its analysis', async () => {
+  const source = Float32Array.from({ length: 1600 }, (_, i) => 0.2 * Math.sin(i * 0.1));
+  const bytes = Buffer.alloc(source.length * 4);
+  source.forEach((x, i) => bytes.writeFloatLE(x, i * 4));
+  const recipe = { babbleMorph: 2, algorithm: 'cepstral-envelope-v1', sampleRate: 8000,
+    settings: { amount: 0.7, windowSize: 256, hopSize: 64 }, timing: { cues: [[0, 0.2]] },
+    sources: [{ id: 'speech' }, { id: 'slices' }], sliceLayer: { algorithm: 'rms-overlay-v1', level: 0.18 } };
+  const request = { recipe, sources: { speech: bytes.toString('base64'), slices: bytes.toString('base64') }, preRoll: 1, sceneSeconds: 2 };
+  const worker = new Worker(`const {parentPort}=require('node:worker_threads');${bundle(['tools/audition-morph-render.mjs'])}
+    const cache={}; parentPort.on('message', data => __m['tools/audition-morph-render.mjs'].handleMorphMessage(data,
+      (value, transfer) => parentPort.postMessage(value, transfer), cache));`, { eval: true });
+  try {
+    for (const amount of [0.7, 0.31, 1]) {
+      const job = { ...request, recipe: { ...recipe, settings: { ...recipe.settings, amount } } };
+      const received = once(worker, 'message');
+      worker.postMessage(job);
+      const [message] = await received;
+      assert.equal(message.error, undefined);
+      const expected = renderMorphTake(job);
+      assert.deepEqual(message.result.clip, expected.clip);
+      assert.deepEqual(message.result.playback.samples, expected.playback.samples);
+      assert.equal(message.result.morphCache.colour.length, source.length);
+    }
+  } finally { await worker.terminate(); }
 });
 
 test('loud overlays retain their balance without clipping, and silent slices stay silent', () => {

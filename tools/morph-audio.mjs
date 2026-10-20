@@ -36,7 +36,9 @@ function logEnvelope(re, im, cutoff) {
   return env;
 }
 
-export function morphTimbre(carrier, colour, sampleRate, opts = {}) {
+// The source analysis is independent of the slider. A live worker can keep
+// these spectra for its current voice and only repeat the inverse transform.
+export function prepareTimbreMorph(carrier, colour, sampleRate, opts = {}) {
   if (!(carrier instanceof Float32Array) || !(colour instanceof Float32Array) || carrier.length !== colour.length || !carrier.length) throw new Error('morph: two nonempty, equally long Float32Array tracks are required');
   if (!carrier.every(Number.isFinite) || !colour.every(Number.isFinite)) throw new Error('morph: tracks must contain finite samples');
   if (!Number.isInteger(sampleRate) || sampleRate < 8000 || sampleRate > 192000) throw new Error('morph: invalid sample rate');
@@ -58,9 +60,9 @@ export function morphTimbre(carrier, colour, sampleRate, opts = {}) {
   }
 
   const window = Float64Array.from({ length: n }, (_, i) => 0.5 - 0.5 * Math.cos(2 * Math.PI * i / n));
-  const out = new Float64Array(carrier.length), weights = new Float64Array(carrier.length);
+  const weights = new Float64Array(carrier.length), frames = [];
   const a = new Float64Array(n), ai = new Float64Array(n), b = new Float64Array(n), bi = new Float64Array(n);
-  let frames = 0, silentColourFrames = 0;
+  let silentColourFrames = 0;
   // Centered windows and normalized overlap-add introduce no frame delay.
   for (let start = -n / 2; start < carrier.length; start += hop) {
     let energyA = 0, energyB = 0;
@@ -70,14 +72,31 @@ export function morphTimbre(carrier, colour, sampleRate, opts = {}) {
       b[j] = (colour[start + j] ?? 0) * window[j];
       energyA += a[j] * a[j]; energyB += b[j] * b[j];
     }
-    frames++;
-    if (amount > 0 && energyA > 1e-20 && energyB > 1e-20) {
+    const frame = { start, energyA };
+    if (energyA > 1e-20 && energyB > 1e-20) {
       fft(a, ai); fft(b, bi);
       const envA = logEnvelope(a, ai, cutoff), envB = logEnvelope(b, bi, cutoff);
+      frame.re = a.slice(); frame.im = ai.slice();
+      frame.delta = Float64Array.from(envB, (x, k) => x - envA[k]);
+    } else if (energyA > 1e-20 && energyB <= 1e-20) silentColourFrames++;
+    frames.push(frame);
+    for (let j = Math.max(0, -start); j < n && start + j < weights.length; j++) weights[start + j] += window[j] * window[j];
+  }
+  return { carrier, sampleRate, settings, window, weights, frames, silentColourFrames };
+}
+
+export function renderPreparedMorph(prepared, amount = prepared.settings.amount) {
+  if (!Number.isFinite(amount) || amount < 0 || amount > 1) throw new Error('morph: amount must be in 0..1');
+  const { carrier, sampleRate, window, weights, frames, silentColourFrames } = prepared;
+  const settings = { ...prepared.settings, amount };
+  const { windowSize: n, fadeMs, peakLimit, cues } = settings;
+  const out = new Float64Array(carrier.length), a = new Float64Array(n), ai = new Float64Array(n);
+  for (const frame of frames) {
+    const { start, energyA } = frame;
+    if (amount > 0 && frame.delta) {
       for (let k = 0; k < n; k++) {
-        // E_mid = E_A^(1-amount) * E_B^amount; keep A's fine structure.
-        const gain = Math.exp(amount * (envB[k] - envA[k]));
-        a[k] *= gain; ai[k] *= gain;
+        const gain = Math.exp(amount * frame.delta[k]);
+        a[k] = frame.re[k] * gain; ai[k] = frame.im[k] * gain;
       }
       ifft(a, ai);
       let energyOut = 0;
@@ -85,10 +104,11 @@ export function morphTimbre(carrier, colour, sampleRate, opts = {}) {
       // Preserve the carrier's loudness contour: this morph changes colour.
       const level = energyOut > 1e-30 ? Math.sqrt(energyA / energyOut) : 0;
       for (let j = 0; j < n; j++) a[j] *= level;
-    } else if (energyA > 1e-20 && energyB <= 1e-20) silentColourFrames++;
+    } else {
+      for (let j = 0; j < n; j++) a[j] = (carrier[start + j] ?? 0) * window[j];
+    }
     for (let j = Math.max(0, -start); j < n && start + j < out.length; j++) {
       out[start + j] += a[j] * window[j];
-      weights[start + j] += window[j] * window[j];
     }
   }
   for (let i = 0; i < out.length; i++) out[i] = weights[i] > 1e-12 ? out[i] / weights[i] : 0;
@@ -108,5 +128,9 @@ export function morphTimbre(carrier, colour, sampleRate, opts = {}) {
   for (const x of out) { if (!Number.isFinite(x)) throw new Error('morph: non-finite output'); peak = Math.max(peak, Math.abs(x)); }
   const masterGain = peak > peakLimit ? peakLimit / peak : 1;
   const samples = Float32Array.from(out, (x) => x * masterGain);
-  return { samples, settings, metrics: { frames, silentColourFrames, masterGain, carrierRms: rms(carrier), outputRms: rms(samples), peak: peak * masterGain } };
+  return { samples, settings, metrics: { frames: frames.length, silentColourFrames, masterGain, carrierRms: rms(carrier), outputRms: rms(samples), peak: peak * masterGain } };
+}
+
+export function morphTimbre(carrier, colour, sampleRate, opts = {}) {
+  return renderPreparedMorph(prepareTimbreMorph(carrier, colour, sampleRate, opts));
 }

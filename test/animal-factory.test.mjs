@@ -104,7 +104,7 @@ test('scene audition exports the existing sampler output, its recording and all 
       const recipe = readJSON(path.join(out, v.recipeFile));
       assert.equal(recipe.babbleMorph, 2);
       assert.equal(recipe.settings.amount, 0.7);
-      assert.deepEqual(recipe.sliceLayer, { algorithm: 'rms-overlay-v1', level: 0.5 });
+      assert.deepEqual(recipe.sliceLayer, { algorithm: 'rms-overlay-v1', level: 0.18 });
       assert.equal(recipe.sourceAlignment, 'pad-end-with-silence');
       assert.deepEqual(readJSON(path.join(out, v.cueFile)).morph, recipe);
       assert.equal(v.voice, undefined);
@@ -131,7 +131,7 @@ test('scene audition exports the existing sampler output, its recording and all 
     assert.match(html, /id="morphAmount" type="range" min="0" max="100" step="1"/);
     assert.match(html, /id="sliceVolume" type="range" min="0" max="100" step="1"/);
     const embedded = vm.runInNewContext(script.slice(0, script.indexOf('const $=')) + '\n({DATA,MORPH_WORKER})');
-    assert.equal(Object.keys(embedded.DATA.sources).length, 28);
+    assert.equal(Object.keys(embedded.DATA.sources).length, 36);
     // Exercise the actual bundled worker with the embedded full-precision
     // sources, including the endpoints and a non-preset slider position.
     let message;
@@ -156,7 +156,7 @@ test('scene audition exports the existing sampler output, its recording and all 
       assert.ok(clip.samples.every((x) => Number.isFinite(x) && Math.abs(x) <= 0.9001));
       if (level === 0) assert.equal(rms(clip.samples, Math.ceil(1.34 * recipe.sampleRate), Math.ceil(1.44 * recipe.sampleRate)), 0);
     }
-    worker.onmessage({ data: { recipe: original, sources: {}, preRoll: 1, sceneSeconds: 5.1 } });
+    worker.onmessage({ data: { recipe: { ...original, sources: [{ id: 'missing' }, original.sources[1]] }, sources: {}, preRoll: 1, sceneSeconds: 5.1 } });
     assert.ok(message.error); // decode failures are reported to the slider
 
     // An explicitly requested bad bank cannot silently fall back to the synth
@@ -189,7 +189,7 @@ test('without a bank the audition includes the hen and character speech comparis
     new vm.Script(script);
     const embedded = vm.runInNewContext(script.slice(0, script.indexOf('const $=')) + '\n({DATA,MORPH_WORKER})');
     assert.equal(embedded.MORPH_WORKER, '');
-    assert.equal(Object.keys(embedded.DATA.sources).length, 0);
+    assert.equal(Object.keys(embedded.DATA.sources).length, 24);
   } finally {
     assert.equal(path.dirname(path.resolve(dir)), path.resolve(os.tmpdir()));
     fs.rmSync(dir, { recursive: true, force: true });

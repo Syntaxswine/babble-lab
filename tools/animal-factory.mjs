@@ -128,6 +128,7 @@ const mixes = bank ? layering.pairs.map((pair) => {
       { id: pair.speech, label: speechTake.label, engine: 'formant', clip: speechTake.clip, voice: speechTake.voice, gain: masterGain },
       { id: pair.slices, label: slicesTake.label, engine: 'sampler', clip: slicesTake.clip, voice: slicesTake.voice, gain: sliceGain * masterGain },
     ] };
+  rendered.set(pair.id, { ...speech, samples, used: slices.used });
   return saveTake({ id: pair.id, label: pair.label, engine: 'layered', group: 'LAYERED VOICES', timing, recipe,
     tag: `Speech + music slices · slices ${layering.slicesDb} dB`,
     note: `${speechTake.label} with ${slicesTake.label} overlaid. Both follow the same speech cues; the sliced layer is ${Math.abs(layering.slicesDb)} dB ${layering.slicesDb <= 0 ? 'below' : 'above'} the speech in average signal level.` },
@@ -163,15 +164,15 @@ fs.writeFileSync(path.join(out, 'cast.json'), JSON.stringify(Object.fromEntries(
 
 // Preserve the exact pre-WAV Float32 sources so the browser and offline morphs
 // are identical. Embedded samples also work when this page is opened locally.
-const sources = Object.fromEntries([...new Set(morphs.flatMap((v) => v.recipe.sources.map((s) => s.id)))].map((id) => {
-  const samples = rendered.get(id).samples, bytes = Buffer.alloc(samples.length * 4);
+const sources = Object.fromEntries([...rendered].map(([id, { samples }]) => {
+  const bytes = Buffer.alloc(samples.length * 4);
   for (let i = 0; i < samples.length; i++) bytes.writeFloatLE(samples[i], i * 4);
   return [id, bytes.toString('base64')];
 }));
 const data = JSON.stringify({ example, sequence, results, bank: bankInfo, sources }).replace(/</g, '\\u003c');
 const workerSource = bank ? bundle(['tools/audition-morph-render.mjs']) +
-  "self.onmessage = ({data}) => __m['tools/audition-morph-render.mjs'].handleMorphMessage(data, (value, transfer) => self.postMessage(value, transfer));\n" : '';
-const controlSource = bundle(['tools/audition-morph-control.mjs']);
+  "const analysisCache = {}; self.onmessage = ({data}) => __m['tools/audition-morph-render.mjs'].handleMorphMessage(data, (value, transfer) => self.postMessage(value, transfer), analysisCache);\n" : '';
+const controlSource = bundle(['tools/audition-morph-control.mjs', 'tools/audition-player.mjs']);
 const template = fs.readFileSync(path.join(root, 'tools/animal-factory.html'), 'utf8');
 fs.writeFileSync(path.join(out, 'index.html'), template.replace('/*AUDITION_DATA*/', () =>
   `const DATA = ${data};\nconst MORPH_WORKER = ${JSON.stringify(workerSource).replace(/</g, '\\u003c')};\n${controlSource}`));

@@ -186,24 +186,34 @@ The hen set includes all eight higher speech voices plus the original clucking
 hen and radio hen, fitted to the beak. The original six morph pairings remain.
 `examples/animal-factory/morph-pairs.json` records each speech/slices pairing.
 The **Voice morph** slider starts at 70% and runs from
-0% speech tone to 100% sliced-audio tone. Release it to render and replay the
-new setting. **Beeps & boops volume** independently adds the original sampled
-performance over that voice. It starts at 50%: half the voice's average amplitude
-(about −6 dB). At 0% it is muted, recovering the previous pure morph; at 100%
+0% speech tone to 100% sliced-audio tone. Both sliders work while the line is
+playing: changes blend in at its current position without restarting the line.
+**Beeps & boops volume** independently adds the original sampled
+performance over that voice. It starts at 18% of the voice's RMS amplitude
+(about −15 dB). At 0% it is muted, recovering the previous pure morph; at 100%
 it matches the morphed voice's RMS level. **Mute slices** silences only this
 extra layer. `examples/animal-factory/slice-layer.json` sets its starting level.
-Each voice remembers both sliders until the page is reloaded.
-The Voice WAV, morph recipe and game cues downloads use both settings.
-Playback and exports wait for rendering to finish, and changing either slider
-or voice cancels obsolete work. Reset to 70% restores the preferred morph
+Both sliders keep their positions across voice changes, including returning
+to a voice heard earlier. Reloading restores the 70% / 18% starting balance.
+The Voice WAV, morph recipe and game cues downloads use the settled settings.
+Beeps update immediately using the current morph. Tone changes render in a
+worker; playback continues while they catch up, and downloads wait until the
+requested tone is ready. Continuous dragging coalesces the next render without
+cancelling the one in progress. Changes while paused leave playback paused.
+Reset to 70% restores the preferred morph
 amount while keeping the slice volume; the button follows the morph default.
 
-The worker and exact Float32 source tracks are embedded in the generated page,
-so the slider works offline without a server or fetching local audio files.
-Rendering runs in a short-lived worker that stops on completion, cancellation,
-or leaving the page. After the first slider render, its pure morph is cached
-per voice so volume-only changes can reuse the spectral calculation.
-The sources increase the local HTML size by about 20 MB;
+The worker and exact Float32 tracks for all comparisons are embedded in the page,
+so playback works offline without a server or fetching local audio files.
+A silent WAV provides the native player's transport clock; Web Audio plays
+the selected voice at that position. Sound updates crossfade over 20 ms without
+reloading the transport. Pause, seek, mute and volume remain available.
+The current worker caches the source spectra and envelopes so tone adjustments
+only repeat the inverse transform. It stops on voice changes, page hiding,
+page exit or 15 seconds of inactivity. Cached PCM lets volume adjustments run
+immediately even after the worker stops. Audio nodes disconnect after fading
+out, and the audio context closes on page exit.
+The embedded recordings increase the local HTML size by about 26 MB;
 they remain in ignored `audition/`, alongside the generated recordings.
 
 Morphs interpolate smooth spectral envelopes in log

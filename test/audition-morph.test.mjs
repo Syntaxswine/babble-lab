@@ -3,290 +3,231 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import { createMorphControl } from '../tools/audition-morph-control.mjs';
+import { mixMorphTake, morphKey } from '../tools/audition-morph-render.mjs';
 import { bundle } from '../tools/build-standalone.mjs';
+import { AudioContext } from './helpers/audio.mjs';
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 10));
-function take(id = 'hen', amount = 0.5) {
-  const recipe = { babbleMorph: 2, settings: { amount }, sliceLayer: { algorithm: 'rms-overlay-v1', level: 0.5 }, sources: [] };
-  return { id, engine: 'morph', recipe, cueData: { morph: recipe, mouth: [{ t: 0.1, open: 1 }] },
+function take(id = 'hen', amount = 0.7, level = 0.18) {
+  const recipe = { babbleMorph: 2, algorithm: 'cepstral-envelope-v1', sampleRate: 8000,
+    settings: { amount }, sliceLayer: { algorithm: 'rms-overlay-v1', level },
+    sources: [{ id: 'speech', label: 'Speech' }, { id: 'slices', label: 'Slices' }] };
+  return { id, engine: 'morph', recipe, cueData: { sampleRate: 8000, morph: recipe, mouth: [{ t: 0.1, open: 1 }] },
+    label: id, group: 'MORPHS', audioSeconds: 0.01, rmsDbFS: -20, peakDbFS: -6, maxCueErrorMs: 0,
     clip: `${id}.wav`, sceneClip: `${id}.scene.wav`, recipeFile: `${id}.morph.json`, cueFile: `${id}.cues.json` };
 }
-function setup() {
+const request = (recipe) => ({ recipe, preRoll: 1, sceneSeconds: 2 });
+function resultFor(recipe) {
+  const samples = Float32Array.from({ length: 80 }, (_, i) => Math.sin(i * 0.5) * (0.1 + recipe.settings.amount * 0.1));
+  const colour = Float32Array.from({ length: 80 }, (_, i) => Math.sin(i * 1.1) * 0.1);
+  return mixMorphTake({ ...request(recipe), morphCache: { key: morphKey(recipe), samples, colour, metrics: {} } });
+}
+function setup(options = {}) {
   const workers = [], updates = [];
-  const control = createMorphControl({ delay: 0,
+  const control = createMorphControl({ delay: 0, getRequest: request,
     createWorker() {
-      const worker = { stopped: false, postMessage(job) { this.job = job; }, terminate() { this.stopped = true; } };
+      const worker = { jobs: [], postMessage(job) { this.jobs.push(job); }, terminate() { this.stopped = true; },
+        finish() { this.onmessage({ data: { result: resultFor(this.jobs.at(-1).recipe) } }); } };
       workers.push(worker); return worker;
     },
-    onUpdate(state) { updates.push({ id: state.take.id, status: state.status, amount: state.amount }); },
+    onUpdate(state) { updates.push({ id: state.base.id, status: state.status, amount: state.amount, level: state.sliceLevel }); }, ...options,
   });
-  const finish = (worker) => worker.onmessage({ data: { result: {
-    clip: new Uint8Array([1, 2]), sceneClip: new Uint8Array([3, 4]), rmsDbFS: -25, peakDbFS: -6,
-  } } });
-  return { control, workers, updates, finish };
+  const warm = async (base = take()) => { control.select(base); await settle(); workers.at(-1).finish(); };
+  return { control, workers, updates, warm };
 }
 
-test('slider cancels stale renders and exports only the completed percentage', async () => {
-  const { control, workers, finish } = setup(), base = take();
+test('both slider settings carry across new voices, returning voices and original takes', async () => {
+  const { control, workers, warm } = setup(), base = take();
   try {
-    control.select(base);
+    await warm(base);
+    control.changeSlices(0.23); // immediate, no new worker or render
     assert.equal(control.current.status, 'ready');
-    assert.equal(workers.length, 0); // initial 50% is already rendered
-    control.change(0.2);
-    assert.equal(control.current.status, 'pending');
-    assert.equal(control.current.take.recipe.settings.amount, 0.5);
-    await settle();
-    const old = workers[0];
-    assert.equal(old.job.recipe.settings.amount, 0.2);
-    control.change(0.83);
-    assert.equal(old.stopped, true);
-    await settle();
-    finish(old); // a queued message from an obsolete worker cannot win
-    assert.equal(control.current.status, 'pending');
-    finish(workers[1]);
-    assert.equal(workers[1].stopped, true);
-    const current = control.current;
-    assert.equal(current.status, 'ready');
-    assert.equal(current.take.recipe.settings.amount, 0.83);
-    assert.equal(current.take.cueData.morph.settings.amount, 0.83);
-    assert.deepEqual(current.take.cueData.mouth, base.cueData.mouth);
-    assert.equal(current.take.clip, 'hen-morph-83pct-slices-50pct.wav');
-    assert.equal(current.take.recipeFile, 'hen-morph-83pct-slices-50pct.morph.json');
-    assert.equal(current.take.cueFile, 'hen-morph-83pct-slices-50pct.cues.json');
-    assert.equal(current.take.rmsDbFS, -25);
-    assert.equal(base.recipe.settings.amount, 0.5);
-
+    assert.equal(workers[0].jobs.length, 1);
+    assert.equal(control.current.take.recipe.sliceLayer.level, 0.23);
+    control.change(0.81); await settle(); workers[0].finish();
+    const completed = control.current.take;
+    assert.equal(completed.clip, 'hen-morph-81pct-slices-23pct.wav');
+    assert.equal(completed.cueData.morph.settings.amount, 0.81);
+    assert.equal(completed.cueData.morph.sliceLayer.level, 0.23);
+    assert.deepEqual(completed.cueData.mouth, base.cueData.mouth);
+    control.select(take('robot', 0.4, 0.6));
+    assert.equal(workers[0].stopped, true);
+    assert.equal(control.current.amount, 0.81);
+    assert.equal(control.current.sliceLevel, 0.23);
+    await settle(); workers[1].finish();
+    control.changeSlices(0.12);
     control.select({ id: 'original', engine: 'formant' });
-    control.select(take('other-hen'));
-    assert.equal(control.current.amount, 0.5);
     control.select(base);
-    assert.equal(control.current.amount, 0.83);
-    assert.equal(control.current.take, current.take);
-    assert.equal(workers.length, 2); // revisiting a rendered take reuses it
-    control.change(0.5);
-    assert.equal(control.current.take, base);
-    assert.equal(control.current.output, null);
+    assert.equal(control.current.amount, 0.81);
+    assert.equal(control.current.sliceLevel, 0.12);
+    assert.equal(control.current.status, 'ready'); // reuse hen spectrum, remix new shared balance
+    assert.equal(workers.length, 2);
+    assert.equal(control.current.take.morphCache, undefined);
+    assert.equal(base.recipe.settings.amount, 0.7);
+    assert.equal(base.recipe.sliceLayer.level, 0.18);
+    for (const value of [-1, 1.1, NaN]) assert.throws(() => control.changeSlices(value), /0\.\.1/);
+  } finally { control.dispose(); }
+});
+
+test('continuous dragging keeps audible updates moving and does not undo immediate slice changes', async () => {
+  const { control, workers, warm } = setup();
+  try {
+    await warm(); const worker = workers[0];
+    control.change(0.2); await settle();
+    control.change(0.4); control.change(0.83); control.changeSlices(0.31);
+    assert.equal(worker.stopped, undefined);
+    assert.equal(worker.jobs.length, 2); // one in flight; only the latest request is queued
+    assert.equal(control.current.take.recipe.settings.amount, 0.7);
+    assert.equal(control.current.take.recipe.sliceLayer.level, 0.31);
+    assert.ok(control.current.playback);
+    assert.equal(control.current.status, 'pending');
+    worker.finish();
+    assert.equal(control.current.take.recipe.settings.amount, 0.2);
+    assert.equal(control.current.take.recipe.sliceLayer.level, 0.31); // no stale 18% result
+    assert.equal(control.current.status, 'pending');
+    await settle();
+    assert.equal(worker.jobs.at(-1).recipe.settings.amount, 0.83);
+    worker.finish();
+    assert.equal(control.current.status, 'ready');
+    assert.equal(control.current.take.recipe.settings.amount, 0.83);
+    control.change(0.4); await settle();
+    control.change(0.83); // recover the audible value before the obsolete render finishes
+    const recovered = control.current.playback;
+    worker.finish();
+    assert.equal(control.current.playback, recovered);
     assert.equal(control.current.status, 'ready');
   } finally { control.dispose(); }
 });
 
-test('slice volume is independent, remembered and included in both exports', async () => {
-  const { control, workers, finish } = setup(), base = take('hen', 0.7);
+test('switching voices, hiding the page, idle expiry and disposal release workers', async () => {
+  const { control, workers, updates, warm } = setup({ idleMs: 25 });
   try {
-    control.select(base);
-    control.changeSlices(0);
-    await settle();
-    assert.equal(workers[0].job.recipe.settings.amount, 0.7);
-    assert.equal(workers[0].job.recipe.sliceLayer.level, 0);
-    const cache = { key: 'cached-morph', samples: new Float32Array([0.1]), metrics: {} };
-    workers[0].onmessage({ data: { result: { clip: new Uint8Array([1]), sceneClip: new Uint8Array([2]), morphCache: cache } } });
-    assert.equal(control.current.take.recipe.sliceLayer.level, 0);
-    assert.equal(control.current.take.cueData.morph.sliceLayer.level, 0);
-    assert.equal(control.current.take.morphCache, undefined); // internal PCM is not part of a recipe
-    control.changeSlices(0.81);
-    await settle();
-    const obsolete = workers[1];
-    assert.equal(obsolete.job.morphCache, cache);
-    control.change(0.33);
-    await settle();
-    assert.equal(obsolete.stopped, true);
-    finish(obsolete);
-    assert.equal(control.current.status, 'pending');
-    assert.equal(workers[2].job.recipe.settings.amount, 0.33);
-    assert.equal(workers[2].job.recipe.sliceLayer.level, 0.81);
-    finish(workers[2]);
-    control.select(take('robot'));
-    assert.equal(control.current.sliceLevel, 0.5);
-    control.select(base);
-    assert.equal(control.current.sliceLevel, 0.81);
-    assert.equal(control.current.amount, 0.33);
-    assert.equal(control.current.take.clip, 'hen-morph-33pct-slices-81pct.wav');
-    control.change(0.7); // resetting the morph must not reset the separate layer
-    assert.equal(control.current.sliceLevel, 0.81);
-    assert.equal(control.current.status, 'pending');
-    control.changeSlices(0.5); // both defaults recover the pre-rendered take
-    assert.equal(control.current.take, base);
-    assert.equal(control.current.output, null);
-    assert.equal(control.current.status, 'ready');
-    for (const invalid of [NaN, -0.1, 1.1]) assert.throws(() => control.changeSlices(invalid), /0\.\.1/);
-  } finally { control.dispose(); }
-});
-
-test('switching voices and closing the page stop work without losing the requested setting', async () => {
-  const { control, workers, finish, updates } = setup(), base = take();
-  try {
-    control.select(base); control.change(1);
-    await settle();
-    const old = workers[0];
-    control.select({ id: 'slices', engine: 'sampler' });
+    await warm();
+    control.change(0.9); await settle(); const old = workers[0];
+    control.select(take('pixie')); old.finish();
     assert.equal(old.stopped, true);
-    finish(old);
-    assert.equal(control.current.take.id, 'slices');
-    control.select(base);
-    assert.equal(control.current.amount, 1);
-    assert.equal(control.current.status, 'pending');
-    await settle();
-    control.suspend();
-    assert.equal(workers[1].stopped, true);
-    control.select(base); // restores a page from the back/forward cache
-    await settle();
-    finish(workers[2]);
-    assert.equal(control.current.take.recipe.settings.amount, 1);
-    control.change(0);
-    control.change(0.27); // debounce: no worker for intermediate 0%
-    await settle();
-    assert.equal(workers.length, 4);
-    assert.equal(workers[3].job.recipe.settings.amount, 0.27);
-    control.dispose();
+    assert.equal(control.current.base.id, 'pixie');
+    assert.equal(control.current.playback, undefined);
+    await settle(); control.suspend(); assert.equal(workers[1].stopped, true);
+    control.select(take('pixie')); await settle(); workers[2].finish();
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    assert.equal(workers[2].stopped, true);
+    control.changeSlices(0); assert.equal(control.current.status, 'ready');
+    control.change(0.3); await settle();
+    control.dispose(); const count = updates.length;
+    workers[3].finish(); assert.equal(updates.length, count);
     assert.equal(workers[3].stopped, true);
-    const count = updates.length;
-    finish(workers[3]);
-    assert.equal(updates.length, count);
-    assert.equal(control.current, undefined);
   } finally { control.dispose(); }
 });
 
-test('worker failures leave downloads unavailable until a valid take is selected', async () => {
-  const { control, workers } = setup(), base = take();
+test('a failed tone update retains playback and can recover without resetting shared volume', async () => {
+  const { control, workers, warm } = setup();
   try {
-    control.select(base); control.change(0.9);
-    await settle();
+    await warm(); control.changeSlices(0.26);
+    const previous = control.current.playback;
+    control.change(0.9); await settle();
     workers[0].onmessage({ data: { error: 'Bad source' } });
     assert.equal(control.current.status, 'error');
-    assert.equal(control.current.error, 'Bad source');
+    assert.equal(control.current.playback, previous);
     assert.equal(workers[0].stopped, true);
-    control.change(0.5);
-    assert.equal(control.current.status, 'ready');
     control.change(0.7);
-    await settle();
-    workers[1].onerror({ message: 'Worker unavailable' });
-    assert.equal(control.current.status, 'error');
-    assert.equal(workers[1].stopped, true);
-    control.select({ id: 'original', engine: 'formant' });
     assert.equal(control.current.status, 'ready');
+    assert.equal(control.current.sliceLevel, 0.26);
   } finally { control.dispose(); }
-  const blocked = createMorphControl({ delay: 0, createWorker() { throw new Error('Worker construction blocked'); }, onUpdate() {} });
-  try {
-    blocked.select(base); blocked.change(0.6); await settle();
-    assert.equal(blocked.current.status, 'error');
-    blocked.change(0.5);
-    assert.equal(blocked.current.status, 'ready');
-  } finally { blocked.dispose(); }
 });
 
-test('page wires slider changes to playback and downloadable WAV, recipe and cues', async () => {
-  // Test the page's actual event handlers without a browser or local server.
+test('page sliders never pause, reload or rewind playing audio and preserve shared settings on voice changes', async () => {
   class Element {
-    constructor(tag) { this.tag = tag; this.children = []; this.attributes = {}; this.currentTime = 0; this.paused = true; this.checked = true; }
+    constructor(tag) { this.tag = tag; this.children = []; this.attributes = {}; this.currentTime = 0; this.paused = true; this.checked = true; this.volume = 1; this.playbackRate = 1; }
     append(child) { this.children.push(child); }
     querySelectorAll(tag) { return this.children.flatMap((c) => [...(c.tag === tag ? [c] : []), ...c.querySelectorAll(tag)]); }
     querySelector(tag) { return this.querySelectorAll(tag)[0]; }
     setAttribute(key, value) { this.attributes[key] = value; }
     removeAttribute(key) { delete this.attributes[key]; delete this[key]; }
-    pause() { this.paused = true; }
-    load() {}
-    play() { this.paused = false; this.plays = (this.plays ?? 0) + 1; return Promise.resolve(); }
+    pause() { this.paused = true; this.onpause?.(); }
+    load() { this.loads = (this.loads ?? 0) + 1; }
+    play() { this.paused = false; this.plays = (this.plays ?? 0) + 1; this.onplay?.(); return Promise.resolve(); }
     scrollIntoView() {}
     getContext() { return { clearRect() {}, fillRect() {}, fillText() {}, drawImage() {} }; }
   }
   const html = fs.readFileSync(new URL('../tools/animal-factory.html', import.meta.url), 'utf8');
   const elements = Object.fromEntries([...html.matchAll(/<(\w+)[^>]*\bid="([^"]+)"/g)].map((m) => [m[2], new Element(m[1])]));
-  const audio = elements.audio, events = new Map(), timers = new Map(), blobs = new Map(), workers = [];
+  const audio = elements.audio, events = new Map(), timers = new Map(), blobs = new Map(), workers = [], contexts = [];
   let serial = 0;
-  const base = { ...take('hen', 0.7), label: 'Morph hen', group: 'MORPHS', note: '', audioSeconds: 0.2, peakDbFS: -6, rmsDbFS: -20, maxCueErrorMs: 0 };
-  base.recipe.sources = [{ id: 'speech', label: 'Speech' }, { id: 'slices', label: 'Slices' }];
-  const original = { ...base, id: 'original', engine: 'formant', label: 'Original', group: 'ORIGINALS', recipe: undefined, voice: {}, voiceFile: 'original.voice.json', clip: 'original.wav', sceneClip: 'original.scene.wav' };
+  const base = take(), robot = take('robot');
+  const original = { ...base, id: 'original', engine: 'formant', recipe: undefined, voice: {}, voiceFile: 'original.voice.json', clip: 'original.wav' };
   const data = { example: { text: 'Hello', shotFrom: 0, shotTo: 2, sceneStart: 1 }, sequence: null,
-    results: [base, original], sources: { speech: 'speech-data', slices: 'slice-data' }, bank: null };
+    results: [base, robot, original], sources: { original: Buffer.alloc(80 * 4).toString('base64') }, bank: {} };
   class Worker {
-    constructor() { workers.push(this); }
-    postMessage(value) { this.request = value; }
+    constructor() { this.jobs = []; workers.push(this); }
+    postMessage(value) { this.jobs.push(value); }
     terminate() { this.stopped = true; }
-    finish() { this.onmessage({ data: { result: { clip: new Uint8Array([1, 2, 3]), sceneClip: new Uint8Array([4, 5]), peakDbFS: -7, rmsDbFS: -24 } } }); }
+    finish() { this.onmessage({ data: { result: resultFor(this.jobs.at(-1).recipe) } }); }
   }
   const context = {
-    document: { getElementById: (id) => elements[id], createElement: (tag) => new Element(tag), body: new Element('body') },
-    window: {}, Blob, Worker,
+    document: { getElementById: (id) => elements[id], createElement: (tag) => new Element(tag), body: new Element('body'), addEventListener(type, fn) { events.set(type, fn); } },
+    window: {}, Blob, Worker, atob, Float32Array, Float64Array, Uint8Array, DataView,
+    AudioContext: class extends AudioContext { constructor() { super(); contexts.push(this); } },
     URL: { createObjectURL(blob) { const url = `blob:${++serial}`; blobs.set(url, blob); return url; }, revokeObjectURL(url) { blobs.delete(url); } },
-    setTimeout(fn) { const id = ++serial; timers.set(id, fn); return id; }, clearTimeout(id) { timers.delete(id); },
+    setTimeout(fn, delay) { const id = ++serial; timers.set(id, { fn, delay }); return id; }, clearTimeout(id) { timers.delete(id); },
     requestAnimationFrame() {}, cancelAnimationFrame() {}, addEventListener(type, fn) { events.set(type, fn); },
   };
-  const runTimers = () => { const pending = [...timers.values()]; timers.clear(); pending.forEach((fn) => fn()); };
+  const runTimers = () => { for (const [id, { fn, delay }] of [...timers]) if (delay <= 25) { timers.delete(id); fn(); } };
   const script = html.match(/<script>([\s\S]*?)<\/script>/)[1].replace('/*AUDITION_DATA*/', () =>
-    `const DATA=${JSON.stringify(data)};const MORPH_WORKER='embedded-worker';${bundle(['tools/audition-morph-control.mjs'])}`);
+    `const DATA=${JSON.stringify(data)};const MORPH_WORKER='embedded-worker';${bundle(['tools/audition-morph-control.mjs', 'tools/audition-player.mjs'])}`);
   vm.runInNewContext(script, context);
   try {
-    assert.equal(elements.morphControls.hidden, false);
-    assert.equal(elements.wav.href, base.clip);
     assert.equal(Number(elements.morphAmount.value), 70);
-    assert.equal(Number(elements.sliceVolume.value), 50);
-    assert.equal(elements.sliceValue.textContent, '50%');
-    assert.equal(elements.resetMorph.textContent, 'Reset to 70%');
-    assert.equal(elements.resetMorph.attributes['aria-label'], 'Reset voice morph to 70 percent');
-    elements.morphAmount.value = '73'; elements.morphAmount.oninput(); elements.morphAmount.onchange();
-    assert.equal(elements.replay.disabled, true);
-    assert.equal(elements.wav.href, undefined);
-    assert.equal(elements.voice.href, undefined);
-    let prevented = false;
-    elements.wav.onclick({ preventDefault() { prevented = true; } });
-    assert.equal(prevented, true);
-    runTimers();
-    assert.equal(workers[0].request.recipe.settings.amount, 0.73);
-    assert.equal(workers[0].request.sources.slices, 'slice-data');
+    assert.equal(Number(elements.sliceVolume.value), 18);
+    runTimers(); workers[0].finish();
+    assert.equal(elements.wav.href, base.clip);
+    await elements.replay.onclick(); await settle();
+    assert.equal(audio.plays, 1);
+    audio.currentTime = 1.003;
+    contexts[0].currentTime += 1.003;
+    const clockSource = audio.src, loads = audio.loads;
+    elements.sliceVolume.value = '23'; elements.sliceVolume.oninput();
+    assert.equal(audio.paused, false); assert.equal(audio.currentTime, 1.003);
+    assert.equal(audio.src, clockSource); assert.equal(audio.loads, loads); assert.equal(audio.plays, 1);
+    assert.equal(elements.wav.download, 'hen-morph-70pct-slices-23pct.wav');
+    assert.equal(JSON.parse(await blobs.get(elements.voice.href).text()).sliceLayer.level, 0.23);
+    elements.morphAmount.value = '81'; elements.morphAmount.oninput(); runTimers();
+    assert.equal(audio.paused, false); assert.equal(elements.replay.disabled, false);
+    assert.equal(elements.wav.href, undefined); // never export an obsolete setting
     workers[0].finish();
-    assert.equal(workers[0].stopped, true);
-    assert.equal(elements.replay.disabled, false);
-    assert.equal(elements.wav.download, 'hen-morph-73pct-slices-50pct.wav');
-    assert.deepEqual(new Uint8Array(await blobs.get(elements.wav.href).arrayBuffer()), new Uint8Array([1, 2, 3]));
-    const recipe = JSON.parse(await blobs.get(elements.voice.href).text());
-    const cues = JSON.parse(await blobs.get(elements.cues.href).text());
-    assert.equal(recipe.settings.amount, 0.73);
-    assert.equal(cues.morph.settings.amount, 0.73);
-    assert.equal(recipe.sliceLayer.level, 0.5);
-    assert.equal(cues.morph.sliceLayer.level, 0.5);
-    assert.equal(audio.plays, 1); // release replays the completed setting
-    assert.equal(audio.volume, 1); // a quieter render cannot set volume above 1
-    const oldWav = elements.wav.href;
+    assert.equal(audio.src, clockSource); assert.equal(audio.loads, loads); assert.equal(audio.plays, 1);
+    assert.equal(audio.currentTime, 1.003);
+    assert.equal(elements.wav.download, 'hen-morph-81pct-slices-23pct.wav');
+    assert.equal(JSON.parse(await blobs.get(elements.cues.href).text()).morph.settings.amount, 0.81);
+    const last = contexts[0].sources.at(-1);
+    assert.ok(last.starts[0][1] >= 1.003); // replacement starts at the current word, never zero
+    audio.pause();
+    elements.muteSlices.onclick(); assert.equal(audio.paused, true); assert.equal(audio.plays, 1);
     const buttons = elements.choices.querySelectorAll('button');
-    buttons[1].onclick();
-    assert.equal(elements.morphControls.hidden, true);
-    assert.equal(elements.wav.href, 'original.wav');
-    buttons[0].onclick();
-    assert.equal(Number(elements.morphAmount.value), 73);
-    assert.equal(elements.wav.href, oldWav);
-    elements.resetMorph.onclick();
-    assert.equal(elements.wav.href, base.clip);
-    assert.equal(blobs.has(oldWav), false);
-    assert.equal(Number(elements.morphAmount.value), 70);
-    elements.sliceVolume.value = '85'; elements.sliceVolume.oninput(); elements.sliceVolume.onchange();
-    assert.equal(elements.replay.disabled, true);
-    assert.equal(elements.wav.href, undefined);
-    runTimers();
-    assert.equal(workers[1].request.recipe.settings.amount, 0.7);
-    assert.equal(workers[1].request.recipe.sliceLayer.level, 0.85);
-    workers[1].finish();
-    assert.equal(elements.wav.download, 'hen-morph-70pct-slices-85pct.wav');
-    assert.equal(JSON.parse(await blobs.get(elements.voice.href).text()).sliceLayer.level, 0.85);
-    assert.equal(JSON.parse(await blobs.get(elements.cues.href).text()).morph.sliceLayer.level, 0.85);
-    elements.resetMorph.onclick();
-    assert.equal(Number(elements.sliceVolume.value), 85);
-    assert.equal(workers.length, 2); // resetting an unchanged morph keeps the completed mix
-    elements.muteSlices.onclick(); runTimers();
-    assert.equal(workers[2].request.recipe.sliceLayer.level, 0);
-    assert.equal(workers[2].request.recipe.settings.amount, 0.7);
-    workers[2].finish();
-    assert.equal(elements.sliceVolume.attributes['aria-valuetext'], 'Muted');
-    assert.equal(elements.wav.download, 'hen-morph-70pct-slices-0pct.wav');
-    elements.morphAmount.value = '25'; elements.morphAmount.oninput(); runTimers();
-    buttons[1].onclick(); workers[3].finish();
-    assert.equal(workers[3].stopped, true);
-    assert.equal(elements.wav.href, 'original.wav');
-    buttons[0].onclick(); runTimers();
-    assert.equal(workers[4].request.recipe.settings.amount, 0.25);
-    assert.equal(workers[4].request.recipe.sliceLayer.level, 0);
+    buttons[1].onclick(); runTimers();
+    assert.equal(Number(elements.morphAmount.value), 81);
     assert.equal(Number(elements.sliceVolume.value), 0);
-  } finally { events.get('pagehide')({ persisted: false }); }
-  assert.equal(workers.at(-1).stopped, true);
-  assert.equal(blobs.size, 0);
-  assert.equal(timers.size, 0);
+    assert.equal(workers[1].jobs[0].recipe.settings.amount, 0.81);
+    assert.equal(workers[1].jobs[0].recipe.sliceLayer.level, 0);
+    workers[1].finish(); await settle();
+    elements.sliceVolume.value = '18'; elements.sliceVolume.oninput();
+    buttons[2].onclick(); assert.equal(elements.morphControls.hidden, true);
+    buttons[0].onclick();
+    assert.equal(Number(elements.morphAmount.value), 81);
+    assert.equal(Number(elements.sliceVolume.value), 18);
+    assert.equal(elements.morphControls.hidden, false);
+    elements.resetMorph.onclick(); runTimers();
+    assert.equal(Number(elements.sliceVolume.value), 18);
+    assert.equal(audio.paused, false);
+    context.document.hidden = true; events.get('visibilitychange')(); await settle();
+    assert.equal(audio.paused, true);
+    assert.equal(contexts[0].state, 'suspended');
+    assert.equal(workers.at(-1).stopped, true);
+    context.document.hidden = false; events.get('visibilitychange')(); runTimers();
+    assert.equal(Number(elements.morphAmount.value), 70);
+    assert.equal(Number(elements.sliceVolume.value), 18);
+  } finally { events.get('pagehide')({ persisted: false }); await settle(); }
+  assert.ok(workers.every((worker) => worker.stopped));
+  assert.equal(blobs.size, 0); assert.equal(timers.size, 0);
+  assert.ok(contexts.every((ctx) => ctx.state === 'closed'));
 });
