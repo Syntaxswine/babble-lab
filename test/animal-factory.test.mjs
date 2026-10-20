@@ -8,6 +8,7 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { makeBank, encodeBank, decodeBank, encodeWav, decodeWav, render } from '../src/index.mjs';
 import { rms } from '../tools/analyze.mjs';
+import { morphTimbre } from '../tools/morph-audio.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const generate = (...args) => spawnSync(process.execPath, [path.join(root, 'tools/animal-factory.mjs'), ...args], { encoding: 'utf8', timeout: 30000 });
@@ -25,7 +26,7 @@ test('scene audition exports the existing sampler output, its recording and all 
     const built = generate('--bank', bankPath, '-o', out);
     assert.equal(built.status, 0, built.stderr);
     const bank = decodeBank(bytes), report = readJSON(path.join(out, 'report.json'));
-    assert.equal(report.variants.length, 24);
+    assert.equal(report.variants.length, 30);
     assert.deepEqual(fs.readFileSync(path.join(out, report.bank.file)), Buffer.from(bytes));
     assert.equal(report.bank.source, 'fixture.wav');
     const sampled = report.variants.filter((v) => v.engine === 'sampler');
@@ -53,7 +54,7 @@ test('scene audition exports the existing sampler output, its recording and all 
     assert.deepEqual(fs.readFileSync(path.join(out, speech.clip)), Buffer.from(encodeWav(expectedSpeech.samples, expectedSpeech.sampleRate)));
     const mixes = report.variants.filter((v) => v.engine === 'layered');
     assert.equal(mixes.length, 6);
-    assert.equal(report.variants[0].engine, 'layered');
+    assert.equal(report.variants[0].engine, 'morph');
     const cast = readJSON(path.join(out, 'cast.json'));
     assert.equal(Object.keys(cast).length, 18);
     for (const v of mixes) {
@@ -86,6 +87,25 @@ test('scene audition exports the existing sampler output, its recording and all 
       const scene = decodeWav(fs.readFileSync(path.join(out, v.sceneClip)));
       assert.ok(scene.samples.subarray(0, scene.sampleRate).every((x) => x === 0));
       assert.deepEqual(scene.samples.subarray(scene.sampleRate, scene.sampleRate + mixed.samples.length), mixed.samples);
+    }
+    const morphs = report.variants.filter((v) => v.engine === 'morph');
+    assert.equal(morphs.length, 6);
+    for (const v of morphs) {
+      const recipe = readJSON(path.join(out, v.recipeFile));
+      assert.equal(recipe.babbleMorph, 1);
+      assert.equal(recipe.settings.amount, 0.5);
+      assert.deepEqual(readJSON(path.join(out, v.cueFile)).morph, recipe);
+      assert.equal(v.voice, undefined);
+      assert.equal(cast[v.id], undefined);
+      const sources = recipe.sources.map((s) => render(recipe.text, s.voice, {
+        sampleRate: recipe.sampleRate, timing: recipe.timing, bank: s.engine === 'sampler' ? bank : undefined,
+      }));
+      const rebuilt = morphTimbre(sources[0].samples, sources[1].samples, recipe.sampleRate, { ...recipe.settings, cues: recipe.timing.cues });
+      assert.deepEqual(fs.readFileSync(path.join(out, v.clip)), Buffer.from(encodeWav(rebuilt.samples, recipe.sampleRate)));
+      assert.equal(v.maxCueErrorMs, 0);
+      assert.equal(v.used.length, 14);
+      assert.ok(rebuilt.samples.every((x) => Number.isFinite(x) && Math.abs(x) <= 0.9001));
+      assert.equal(rms(rebuilt.samples, Math.ceil(1.34 * recipe.sampleRate), Math.ceil(1.44 * recipe.sampleRate)), 0);
     }
     const html = fs.readFileSync(path.join(out, 'index.html'), 'utf8');
     const script = html.match(/<script>([\s\S]*?)<\/script>/)[1];

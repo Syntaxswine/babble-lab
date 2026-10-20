@@ -6,6 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { render, encodeWav, decodeBank, mouthCues, revealSchedule, compactVoice } from '../src/index.mjs';
 import { rms, db } from './analyze.mjs';
+import { morphTimbre } from './morph-audio.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const example = JSON.parse(fs.readFileSync(path.join(root, 'examples/animal-factory/handler.json'), 'utf8'));
@@ -13,6 +14,7 @@ const timing = JSON.parse(fs.readFileSync(path.join(root, 'examples/animal-facto
 const trials = JSON.parse(fs.readFileSync(path.join(root, 'examples/animal-factory/voices.json'), 'utf8'));
 const bankTrials = JSON.parse(fs.readFileSync(path.join(root, 'examples/animal-factory/bank-voices.json'), 'utf8'));
 const layering = JSON.parse(fs.readFileSync(path.join(root, 'examples/animal-factory/layers.json'), 'utf8'));
+const morphing = JSON.parse(fs.readFileSync(path.join(root, 'examples/animal-factory/morph.json'), 'utf8'));
 let game, bankFile, out = path.join(root, 'audition/animal-factory');
 for (let i = 2; i < process.argv.length; i++) {
   const key = process.argv[i], value = process.argv[++i];
@@ -58,20 +60,21 @@ const variants = [
   { id: 'hen-radio-cued', label: 'Hen · radio + matched beak', voice: 'hen-radio', timing, note: 'The matched performance through the radio band. No added bit crushing.' },
 ];
 function saveTake(v, r) {
-  const layered = v.engine === 'layered', sampled = v.engine === 'sampler' || layered;
+  const morphed = v.engine === 'morph', compound = v.engine === 'layered' || morphed;
+  const sampled = v.engine === 'sampler' || compound;
   const said = r.plan.units.filter((u) => u.kind !== 'rest');
   const maxCueErrorMs = Math.max(...said.flatMap((u, i) => [Math.abs(u.t0 - timing.cues[i][0]), Math.abs(u.t1 - timing.cues[i][1])])) * 1000;
   const peak = r.samples.reduce((m, x) => Math.max(m, Math.abs(x)), 0);
   const clip = `${v.id}.wav`, sceneClip = `${v.id}.scene.wav`, cueFile = `${v.id}.cues.json`;
-  const voiceFile = layered ? undefined : `${v.id}.voice.json`, recipeFile = layered ? `${v.id}.mix.json` : undefined;
-  const voice = layered ? undefined : compactVoice(r.plan.voice);
+  const voiceFile = compound ? undefined : `${v.id}.voice.json`, recipeFile = compound ? `${v.id}.${morphed ? 'morph' : 'mix'}.json` : undefined;
+  const voice = compound ? undefined : compactVoice(r.plan.voice);
   fs.writeFileSync(path.join(out, recipeFile ?? voiceFile), JSON.stringify(v.recipe ?? voice, null, 2));
   fs.writeFileSync(path.join(out, clip), encodeWav(r.samples, sampleRate));
   const scene = new Float32Array(Math.max(Math.ceil((example.shotTo - example.shotFrom) * sampleRate), Math.round(preRoll * sampleRate) + r.samples.length));
   scene.set(r.samples, Math.round(preRoll * sampleRate));
   fs.writeFileSync(path.join(out, sceneClip), encodeWav(scene, sampleRate));
   const cueData = {
-    text: example.text, ...(layered ? { mix: v.recipe } : { voice }), take: 0,
+    text: example.text, ...(morphed ? { morph: v.recipe } : compound ? { mix: v.recipe } : { voice }), take: 0,
     timing: { duration: r.plan.duration, cues: said.map((u) => [u.t0, u.t1]) }, sampleRate,
     sceneStart: example.sceneStart, duration: r.plan.duration, audioDuration: r.samples.length / sampleRate,
     words: r.plan.words, mouth: mouthCues(r.plan), reveal: revealSchedule(r.plan),
@@ -119,7 +122,24 @@ const mixes = bank ? layering.pairs.map((pair) => {
     note: `${speechTake.label} with ${slicesTake.label} overlaid. Both follow the same speech cues; the sliced layer is ${Math.abs(layering.slicesDb)} dB ${layering.slicesDb <= 0 ? 'below' : 'above'} the speech in average signal level.` },
   { ...speech, samples, used: slices.used });
 }) : [];
-const results = [...mixes, ...singles];
+const morphs = bank ? layering.pairs.map((pair) => {
+  // These same pairings were validated for matching timing above.
+  const speech = rendered.get(pair.speech), slices = rendered.get(pair.slices);
+  const speechTake = singles.find((v) => v.id === pair.speech), slicesTake = singles.find((v) => v.id === pair.slices);
+  const id = pair.id.replace('layered-', 'morphed-');
+  const morph = morphTimbre(speech.samples, slices.samples, sampleRate, { ...morphing, cues: timing.cues });
+  const recipe = { babbleMorph: 1, algorithm: 'cepstral-envelope-v1', name: id, text: example.text,
+    sampleRate, take: 0, timing, settings: morphing, bank: bankInfo,
+    sources: [
+      { role: 'carrier', id: pair.speech, label: speechTake.label, engine: 'formant', clip: speechTake.clip, voice: speechTake.voice },
+      { role: 'colour', id: pair.slices, label: slicesTake.label, engine: 'sampler', clip: slicesTake.clip, voice: slicesTake.voice },
+    ] };
+  return saveTake({ id, label: pair.label.replace('Layered hen', 'Halfway hen'), engine: 'morph', group: 'HALFWAY TIMBRE MORPHS', timing, recipe,
+    tag: `${Math.round(morphing.amount * 100)}% tone-colour morph · speech pitch and timing`, morphMetrics: morph.metrics,
+    note: `${speechTake.label} with its spectral envelope moved ${Math.round(morphing.amount * 100)}% toward ${slicesTake.label}. Keeps the speech pitch and rhythm. This is a midpoint of measured tone colour; judge the character by listening.` },
+  { ...speech, samples: morph.samples, used: slices.used });
+}) : [];
+const results = [...morphs, ...mixes, ...singles];
 const report = { text: example.text, reference: sequence ? 'Local game room-02 sprite sequence; speech cues verified against the fixture' : 'No game assets supplied; timing fixture only',
   sceneStart: example.sceneStart, syllables: timing.cues.length, sampleRate, bank: bankInfo, variants: results };
 fs.writeFileSync(path.join(out, 'report.json'), JSON.stringify(report, null, 2));

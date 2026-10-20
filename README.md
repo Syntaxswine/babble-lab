@@ -179,8 +179,26 @@ npm run audition:animal-factory -- --game ../AnimalFactory3D/game
 npm run audition:animal-factory -- --game ../AnimalFactory3D/game --bank banks/glades-of-arcadia.bank.wav
 ```
 
-Open `audition/animal-factory/index.html`. With `--bank`, six **layered** takes
-appear first: the sliced voices over the earlier speech voices, using their
+Open `audition/animal-factory/index.html`. With `--bank`, six **halfway timbre
+morphs** appear first. They interpolate smooth spectral envelopes in log
+amplitude, retaining the speech track's phase, harmonic structure and timing.
+At 50%, the target envelope is `sqrt(E_speech * E_slices)`; the speech spectrum
+is reshaped toward it. This is a tone-colour midpoint, not a pitch midpoint
+or a guarantee of a perceptually halfway voice. It does not add the two tracks.
+
+`tools/morph-audio.mjs` uses centered STFT windows and cepstral smoothing, following
+the [spectral-envelope and cross-synthesis methods described by Julius O. Smith III](https://www.dsprelated.com/freebooks/sasp/Applications_STFT.html).
+`examples/animal-factory/morph.json` sets the amount (0.5), window/hop
+(2048/256 samples), and envelope smoothing (1 ms). Each frame retains the
+speech energy; silent donor frames retain the carrier. Normalized overlap-add
+adds no frame delay. The animation cues gate the result with 2 ms edge fades,
+and a common gain leaves peaks at or below 0.9. The `.morph.json` recipe records
+the source voices and all settings. Render the two sources, then call
+`morphTimbre(carrier.samples, colour.samples, sampleRate, { ...recipe.settings,
+cues: recipe.timing.cues })` to reproduce the result. Morph recipes are not
+single-voice presets. The original synth and sampler remain unchanged.
+
+Six **layered** takes follow: the sliced voices over the earlier speech voices, using their
 existing performances and identical speech cues. The pairs are bright/bright,
 chirpy/chirpy, tiny/small, clucking/throaty, radio/radio and original-speed/clear.
 `examples/animal-factory/layers.json` sets these pairings and `slicesDb` (default

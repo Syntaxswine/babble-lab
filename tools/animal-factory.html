@@ -19,7 +19,7 @@
 <p id="exportNote"></p>
 <p id="bankNote"></p>
 <p id="status" role="status">Loading reference…</p></aside></div>
-<footer>Layered takes add the existing speech and music-slice recordings together on the same clock. Music-slice takes use the recording sampler; formant takes use the synthesizer. The original narrator is the default formant voice, not an original game soundtrack. Cue error measures scheduled syllable boundaries, not perceived lip-sync or sound quality. Level matching adjusts playback volume using average signal energy; downloaded WAVs keep their original level. The voice-only WAV starts at the line; this player adds one second of pre-roll. <a href="report.json">Measurements</a></footer>
+<footer>Halfway takes morph the spectral envelope while retaining speech pitch and timing. Layered takes add both recordings together. Music-slice takes use the recording sampler; formant takes use the synthesizer. The original narrator is the default formant voice, not an original game soundtrack. Cue error measures scheduled syllable boundaries, not perceived lip-sync or sound quality. Level matching adjusts playback volume using average signal energy; downloaded WAVs keep their original level. The voice-only WAV starts at the line; this player adds one second of pre-roll. <a href="report.json">Measurements</a></footer>
 </main><script>
 /*AUDITION_DATA*/
 const $=id=>document.getElementById(id), audio=$('audio'), canvas=$('scene'), g=canvas.getContext('2d');
@@ -28,7 +28,7 @@ let selected=0, images=[], ready=false, frame=0;
 const targetLevel=Math.min(...results.map(r=>r.rmsDbFS));
 function matchLevel(){audio.volume=$('level').checked?Math.pow(10,(targetLevel-results[selected].rmsDbFS)/20):1;}
 $('caption').textContent=example.text;
-$('intro').textContent=DATA.bank?'Hear the sliced voices layered over the earlier speech voices. Original takes are below for comparison.':'Formant speech voices. No music sample bank was supplied for this audition.';
+$('intro').textContent=DATA.bank?'Hear a voice with tone colour halfway toward the music slices. Layered mixes and the original takes follow for comparison.':'Formant speech voices. No music sample bank was supplied for this audition.';
 if(DATA.bank){
  $('bank').hidden=false;$('bank').href=DATA.bank.file;
  $('bankNote').textContent=`Bank: ${DATA.bank.source||DATA.bank.name} · ${DATA.bank.segments} pieces of ${DATA.bank.segmentSeconds} s. To reuse a sliced voice JSON, load this sample bank too.${DATA.bank.note?' '+DATA.bank.note:''}`;
@@ -54,10 +54,10 @@ function choose(i){
  matchLevel();
  [...$('choices').querySelectorAll('button')].forEach((b,k)=>b.setAttribute('aria-pressed',String(k===i)));
  $('note').textContent=v.note;$('wav').href=v.clip;$('cues').href=v.cueFile;$('voice').href=v.recipeFile??v.voiceFile;
- $('voice').textContent=v.recipe?'Mix recipe JSON':'Voice JSON';
- $('exportNote').textContent=v.recipe?'Use the mixed WAV in your game. The mix recipe records both source voices and their volume settings.':'';
+ $('voice').textContent=v.engine==='morph'?'Morph recipe JSON':v.recipe?'Mix recipe JSON':'Voice JSON';
+ $('exportNote').textContent=v.engine==='morph'?'Use the morphed WAV in your game. The recipe records both source voices and the morph settings.':v.recipe?'Use the mixed WAV in your game. The mix recipe records both source voices and their volume settings.':'';
  $('takeName').textContent=`${i+1} / ${results.length} · ${v.label}`;
- $('source').textContent=v.engine==='layered'?`Layers: ${v.recipe.layers.map(l=>l.label).join(' + ')}`:v.engine==='sampler'?`Source: music slices · ${v.bank.source||v.bank.name} · ${((v.voice.pitch??140)/140).toFixed(2)}× base speed · ${v.used.length} slice selections`:'Source: formant synthesizer';
+ $('source').textContent=v.engine==='morph'?`Tone colour: ${v.recipe.sources[0].label} → ${Math.round(v.recipe.settings.amount*100)}% toward ${v.recipe.sources[1].label}`:v.engine==='layered'?`Layers: ${v.recipe.layers.map(l=>l.label).join(' + ')}`:v.engine==='sampler'?`Source: music slices · ${v.bank.source||v.bank.name} · ${((v.voice.pitch??140)/140).toFixed(2)}× base speed · ${v.used.length} slice selections`:'Source: formant synthesizer';
  $('metrics').textContent=`${v.audioSeconds.toFixed(2)} s voice WAV · peak ${v.peakDbFS.toFixed(1)} dBFS · maximum cue error ${v.maxCueErrorMs.toFixed(1)} ms`;
  draw();
 }

@@ -1,0 +1,8 @@
+{
+  "amount": 0.5,
+  "windowSize": 2048,
+  "hopSize": 256,
+  "envelopeMs": 1,
+  "fadeMs": 2,
+  "peakLimit": 0.9
+}
