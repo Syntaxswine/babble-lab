@@ -1,0 +1,14 @@
+[
+  { "id": "character-gruff", "label": "Gruff", "voice": "gruff" },
+  { "id": "character-pixie", "label": "Pixie", "voice": "pixie" },
+  { "id": "character-elder", "label": "Elder", "voice": "elder" },
+  { "id": "character-robot", "label": "Robot", "voice": "robot" },
+  { "id": "character-mumble", "label": "Mumble", "voice": "mumble" },
+  { "id": "character-ghost", "label": "Ghost", "voice": "ghost" },
+  { "id": "character-imp", "label": "Imp", "voice": "imp" },
+  { "id": "character-beast", "label": "Beast", "voice": "beast" },
+  { "id": "character-radio", "label": "Radio", "voice": "radio" },
+  { "id": "character-wah", "label": "Wah", "voice": "wah" },
+  { "id": "character-grunt", "label": "Grunt", "voice": "grunt" },
+  { "id": "narrator-cued", "label": "Narrator · matched to beak", "voice": "narrator" }
+]

@@ -4,18 +4,20 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { render, encodeWav, decodeBank, mouthCues, revealSchedule, compactVoice } from '../src/index.mjs';
+import { render, encodeWav, decodeBank, mouthCues, revealSchedule, compactVoice, PRESETS, resolveVoice } from '../src/index.mjs';
 import { rms, db } from './analyze.mjs';
-import { morphTimbre } from './morph-audio.mjs';
+import { morphTimbre, padMorphSources } from './morph-audio.mjs';
 import { bundle } from './build-standalone.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const example = JSON.parse(fs.readFileSync(path.join(root, 'examples/animal-factory/handler.json'), 'utf8'));
 const timing = JSON.parse(fs.readFileSync(path.join(root, 'examples/animal-factory/handler.timing.json'), 'utf8'));
 const trials = JSON.parse(fs.readFileSync(path.join(root, 'examples/animal-factory/voices.json'), 'utf8'));
+const characters = JSON.parse(fs.readFileSync(path.join(root, 'examples/animal-factory/character-voices.json'), 'utf8'));
 const bankTrials = JSON.parse(fs.readFileSync(path.join(root, 'examples/animal-factory/bank-voices.json'), 'utf8'));
 const layering = JSON.parse(fs.readFileSync(path.join(root, 'examples/animal-factory/layers.json'), 'utf8'));
 const morphing = JSON.parse(fs.readFileSync(path.join(root, 'examples/animal-factory/morph.json'), 'utf8'));
+const morphPairs = JSON.parse(fs.readFileSync(path.join(root, 'examples/animal-factory/morph-pairs.json'), 'utf8'));
 let game, bankFile, out = path.join(root, 'audition/animal-factory');
 for (let i = 2; i < process.argv.length; i++) {
   const key = process.argv[i], value = process.argv[++i];
@@ -59,6 +61,12 @@ const variants = [
   { id: 'hen-natural', label: 'Hen · natural timing', voice: 'hen', note: 'Species-specific cluck syllables; the engine chooses the rhythm.' },
   { id: 'hen-cued', label: 'Hen · matched to beak', voice: 'hen', timing, note: 'The same hen, with every syllable fitted to the animation.' },
   { id: 'hen-radio-cued', label: 'Hen · radio + matched beak', voice: 'hen-radio', timing, note: 'The matched performance through the radio band. No added bit crushing.' },
+  ...characters.map((v) => {
+    const voice = resolveVoice(v.voice);
+    if (voice.mode !== 'syllable') throw new Error(`Character audition needs a syllable voice: ${v.id}`);
+    return { ...v, timing, group: 'CHARACTER SPEECH', note: PRESETS[v.voice].note,
+      tag: `${voice.wave === 'whisper' ? 'Unvoiced whisper' : voice.pitch + ' Hz'} · 14 animation cues` };
+  }),
 ];
 function saveTake(v, r) {
   const morphed = v.engine === 'morph', compound = v.engine === 'layered' || morphed;
@@ -123,19 +131,22 @@ const mixes = bank ? layering.pairs.map((pair) => {
     note: `${speechTake.label} with ${slicesTake.label} overlaid. Both follow the same speech cues; the sliced layer is ${Math.abs(layering.slicesDb)} dB ${layering.slicesDb <= 0 ? 'below' : 'above'} the speech in average signal level.` },
   { ...speech, samples, used: slices.used });
 }) : [];
-const morphs = bank ? layering.pairs.map((pair) => {
-  // These same pairings were validated for matching timing above.
+const morphs = bank ? morphPairs.map((pair) => {
   const speech = rendered.get(pair.speech), slices = rendered.get(pair.slices);
   const speechTake = singles.find((v) => v.id === pair.speech), slicesTake = singles.find((v) => v.id === pair.slices);
-  const id = pair.id.replace('layered-', 'morphed-');
-  const morph = morphTimbre(speech.samples, slices.samples, sampleRate, { ...morphing, cues: timing.cues });
+  const slots = (p) => p.units.filter((u) => u.kind !== 'rest').map((u) => [u.t0, u.t1]);
+  if (!speech || !slices || speechTake.engine !== 'formant' || slicesTake.engine !== 'sampler') throw new Error(`Invalid morph pairing: ${pair.id}`);
+  if (JSON.stringify(slots(speech.plan)) !== JSON.stringify(timing.cues) || JSON.stringify(slots(slices.plan)) !== JSON.stringify(timing.cues)) throw new Error(`Morph sources must follow the animation cues: ${pair.id}`);
+  const id = pair.id;
+  const [carrier, colour] = padMorphSources(speech.samples, slices.samples);
+  const morph = morphTimbre(carrier, colour, sampleRate, { ...morphing, cues: timing.cues });
   const recipe = { babbleMorph: 1, algorithm: 'cepstral-envelope-v1', name: id, text: example.text,
-    sampleRate, take: 0, timing, settings: morphing, bank: bankInfo,
+    sampleRate, take: 0, timing, settings: morphing, bank: bankInfo, sourceAlignment: 'pad-end-with-silence',
     sources: [
       { role: 'carrier', id: pair.speech, label: speechTake.label, engine: 'formant', clip: speechTake.clip, voice: speechTake.voice },
       { role: 'colour', id: pair.slices, label: slicesTake.label, engine: 'sampler', clip: slicesTake.clip, voice: slicesTake.voice },
     ] };
-  return saveTake({ id, label: pair.label.replace('Layered hen', 'Morph hen'), engine: 'morph', group: 'ADJUSTABLE TIMBRE MORPHS', timing, recipe,
+  return saveTake({ id, label: pair.label, engine: 'morph', group: pair.group, timing, recipe,
     tag: `${Math.round(morphing.amount * 100)}% tone-colour morph · speech pitch and timing`, morphMetrics: morph.metrics,
     note: `${speechTake.label} with its spectral envelope moved ${Math.round(morphing.amount * 100)}% toward ${slicesTake.label}. Keeps the speech pitch and rhythm. Adjust the amount with the audition slider.` },
   { ...speech, samples: morph.samples, used: slices.used });

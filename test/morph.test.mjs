@@ -1,12 +1,28 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { morphTimbre } from '../tools/morph-audio.mjs';
+import { morphTimbre, padMorphSources } from '../tools/morph-audio.mjs';
 import { rms, pitch, bandRatioDb } from '../tools/analyze.mjs';
 
 const sr = 16000;
 const options = { windowSize: 1024, hopSize: 128, envelopeMs: 1 };
 const maxDifference = (a, b) => a.reduce((m, x, i) => Math.max(m, Math.abs(x - b[i])), 0);
 const tone = (hz = 250) => Float32Array.from({ length: sr }, (_, i) => 0.2 * Math.sin(2 * Math.PI * hz * i / sr));
+
+test('alignment pads only the shorter tail and preserves the sample clock and inputs', () => {
+  const short = new Float32Array([0, 0.2, -0.3]), long = new Float32Array([0, 0.4, -0.2, 0.1, 0]);
+  const before = short.slice();
+  for (const tracks of [[short, long], [long, short]]) {
+    const padded = padMorphSources(...tracks);
+    for (let i = 0; i < tracks.length; i++) {
+      assert.equal(padded[i].length, long.length);
+      assert.deepEqual(padded[i].subarray(0, tracks[i].length), tracks[i]);
+      assert.ok(padded[i].subarray(tracks[i].length).every((x) => x === 0));
+    }
+  }
+  assert.deepEqual(short, before);
+  assert.equal(padMorphSources(short, short)[0], short);
+  assert.throws(() => padMorphSources(new Float32Array(), long), /nonempty/);
+});
 
 test('timbre morph preserves the carrier for zero amount, identical colour and inverted colour', () => {
   const a = tone(), b = tone(400), before = a.slice();

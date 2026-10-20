@@ -49,7 +49,7 @@ const morph=__m['tools/audition-morph-control.mjs'].createMorphControl({
  onUpdate:showTake,
 });
 $('caption').textContent=example.text;
-$('intro').textContent=DATA.bank?'Choose a morph voice and adjust its tone from speech toward the music slices. Layered mixes and the original takes follow for comparison.':'Formant speech voices. No music sample bank was supplied for this audition.';
+$('intro').textContent=DATA.bank?'Try the broader cast under Character morphs, or the expanded Hen morphs. Each starts at 70%; use the slider to adjust its tone toward the music slices.':'Hen and character speech voices. No music sample bank was supplied for this audition.';
 if(DATA.bank){
  $('bank').hidden=false;$('bank').href=DATA.bank.file;
  $('bankNote').textContent=`Bank: ${DATA.bank.source||DATA.bank.name} · ${DATA.bank.segments} pieces of ${DATA.bank.segmentSeconds} s. To reuse a sliced voice JSON, load this sample bank too.${DATA.bank.note?' '+DATA.bank.note:''}`;

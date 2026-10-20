@@ -179,8 +179,13 @@ npm run audition:animal-factory -- --game ../AnimalFactory3D/game
 npm run audition:animal-factory -- --game ../AnimalFactory3D/game --bank banks/glades-of-arcadia.bank.wav
 ```
 
-Open `audition/animal-factory/index.html`. With `--bank`, six **adjustable timbre
-morphs** appear first. The **Voice morph** slider starts at 70% and runs from
+Open `audition/animal-factory/index.html`. With `--bank`, 22 **adjustable timbre
+morphs** appear first: 12 **Character morphs** (Gruff, Pixie, Elder, Robot,
+Mumble, Ghost, Imp, Beast, Radio, Wah, Grunt and Narrator) and ten **Hen morphs**.
+The hen set includes all eight higher speech voices plus the original clucking
+hen and radio hen, fitted to the beak. The original six morph pairings remain.
+`examples/animal-factory/morph-pairs.json` records each speech/slices pairing.
+The **Voice morph** slider starts at 70% and runs from
 0% speech tone to 100% sliced-audio tone. Release it to render and replay the
 new setting; each voice remembers its percentage until the page is reloaded.
 The Voice WAV, morph recipe and game cues downloads all use the selected
@@ -191,7 +196,7 @@ starting take; the reset button follows the default in the morph settings.
 The worker and exact Float32 source tracks are embedded in the generated page,
 so the slider works offline without a server or fetching local audio files.
 Rendering runs in a short-lived worker that stops on completion, cancellation,
-or leaving the page. The sources increase the local HTML size by about 8 MB;
+or leaving the page. The sources increase the local HTML size by about 20 MB;
 they remain in ignored `audition/`, alongside the generated recordings.
 
 Morphs interpolate smooth spectral envelopes in log
@@ -208,9 +213,17 @@ the [spectral-envelope and cross-synthesis methods described by Julius O. Smith 
 (2048/256 samples), and envelope smoothing (1 ms). Each frame retains the
 speech energy; silent donor frames retain the carrier. Normalized overlap-add
 adds no frame delay. The animation cues gate the result with 2 ms edge fades,
-and a common gain leaves peaks at or below 0.9. The `.morph.json` recipe records
-the source voices and all settings. Render the two sources, then call
-`morphTimbre(carrier.samples, colour.samples, sampleRate, { ...recipe.settings,
+and a common gain leaves peaks at or below 0.9. Longer rests or effects tails
+(notably Ghost's echo) are aligned by padding the shorter source with silence;
+neither source is stretched. The cue gate still silences pauses and the end
+of the line, including any echo there. The unmodified Ghost speech take retains
+its full echo for comparison.
+
+The `.morph.json` recipe records the source voices and all settings. For recipes
+with `sourceAlignment: "pad-end-with-silence"`, render the two sources and call
+`const [carrier, colour] = padMorphSources(speech.samples, slices.samples)`
+to obtain equal-length tracks. Then call
+`morphTimbre(carrier, colour, sampleRate, { ...recipe.settings,
 cues: recipe.timing.cues })` to reproduce the result. Morph recipes are not
 single-voice presets. The original synth and sampler remain unchanged.
 
@@ -236,6 +249,11 @@ They are stored in `examples/animal-factory/voices.json`: Clear hen, Bright hen,
 Chirpy hen, Small hen, Throaty hen, Nasal hen, Soft hen and Bright hen · radio.
 The original four comparisons remain below them: narrator, natural clucks,
 clucks fitted to the beak, and the fitted radio hen.
+
+The 12 **Character speech** takes use the existing syllable-mode presets with
+the same 14 animation cues. `examples/animal-factory/character-voices.json`
+selects these presets; their pitch, timbre and effects are retained. These
+single-source comparisons also appear when generating without a sample bank.
 
 Click a voice to play it with the shot, or use Previous / Next voice. Playback
 can match average signal level across takes so volume alone does not decide

@@ -5,6 +5,17 @@
 // https://www.dsprelated.com/freebooks/sasp/Applications_STFT.html
 import { fft, rms } from './analyze.mjs';
 
+// Sources already share their syllable clock. Only their trailing rests or
+// effects tails may differ: append silence without stretching either track.
+export function padMorphSources(carrier, colour) {
+  if (!(carrier instanceof Float32Array) || !(colour instanceof Float32Array) || !carrier.length || !colour.length) throw new Error('morph: two nonempty Float32Array tracks are required');
+  const length = Math.max(carrier.length, colour.length);
+  return [carrier, colour].map((samples) => {
+    if (samples.length === length) return samples;
+    const padded = new Float32Array(length); padded.set(samples); return padded;
+  });
+}
+
 function ifft(re, im) {
   for (let i = 0; i < im.length; i++) im[i] = -im[i];
   fft(re, im);
