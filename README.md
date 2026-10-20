@@ -179,12 +179,28 @@ npm run audition:animal-factory -- --game ../AnimalFactory3D/game
 npm run audition:animal-factory -- --game ../AnimalFactory3D/game --bank banks/glades-of-arcadia.bank.wav
 ```
 
-Open `audition/animal-factory/index.html`. With `--bank`, six **halfway timbre
-morphs** appear first. They interpolate smooth spectral envelopes in log
+Open `audition/animal-factory/index.html`. With `--bank`, six **adjustable timbre
+morphs** appear first. The **Voice morph** slider starts at 50% and runs from
+0% speech tone to 100% sliced-audio tone. Release it to render and replay the
+new setting; each voice remembers its percentage until the page is reloaded.
+The Voice WAV, morph recipe and game cues downloads all use the selected
+percentage. Playback and exports wait for rendering to finish, and changing
+the slider or voice cancels obsolete work. Reset to 50% restores the original
+halfway take.
+
+The worker and exact Float32 source tracks are embedded in the generated page,
+so the slider works offline without a server or fetching local audio files.
+Rendering runs in a short-lived worker that stops on completion, cancellation,
+or leaving the page. The sources increase the local HTML size by about 8 MB;
+they remain in ignored `audition/`, alongside the generated recordings.
+
+Morphs interpolate smooth spectral envelopes in log
 amplitude, retaining the speech track's phase, harmonic structure and timing.
 At 50%, the target envelope is `sqrt(E_speech * E_slices)`; the speech spectrum
 is reshaped toward it. This is a tone-colour midpoint, not a pitch midpoint
 or a guarantee of a perceptually halfway voice. It does not add the two tracks.
+At 100%, the speech keeps its pitch and timing while taking the sliced track's
+tone colour. Choose a **Music slices** take to hear the sliced recording itself.
 
 `tools/morph-audio.mjs` uses centered STFT windows and cepstral smoothing, following
 the [spectral-envelope and cross-synthesis methods described by Julius O. Smith III](https://www.dsprelated.com/freebooks/sasp/Applications_STFT.html).

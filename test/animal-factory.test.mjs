@@ -112,6 +112,32 @@ test('scene audition exports the existing sampler output, its recording and all 
     new vm.Script(script); // generated data and the page script must parse together
     assert.match(html, /MUSIC SLICES/);
     assert.match(html, /FORMANT SPEECH/);
+    assert.match(html, /id="morphAmount" type="range" min="0" max="100" step="1"/);
+    const embedded = vm.runInNewContext(script.slice(0, script.indexOf('const $=')) + '\n({DATA,MORPH_WORKER})');
+    assert.equal(Object.keys(embedded.DATA.sources).length, 12);
+    // Exercise the actual bundled worker with the embedded full-precision
+    // sources, including the endpoints and a non-preset slider position.
+    let message;
+    const worker = { postMessage(value) { message = value; } };
+    new Function('self', embedded.MORPH_WORKER)(worker);
+    const original = morphs[0].recipe;
+    const sourceTracks = original.sources.map((s) => render(original.text, s.voice, {
+      sampleRate: original.sampleRate, timing: original.timing, bank: s.engine === 'sampler' ? bank : undefined,
+    }));
+    for (const amount of [0, 0.5, 0.73, 1]) {
+      const recipe = { ...original, settings: { ...original.settings, amount } };
+      worker.onmessage({ data: { recipe, sources: embedded.DATA.sources, preRoll: 1, sceneSeconds: 5.1 } });
+      assert.equal(message.error, undefined);
+      const expected = morphTimbre(sourceTracks[0].samples, sourceTracks[1].samples, recipe.sampleRate, { ...recipe.settings, cues: recipe.timing.cues });
+      assert.deepEqual(Buffer.from(message.result.clip), Buffer.from(encodeWav(expected.samples, recipe.sampleRate)), `browser ${amount} diverged from the offline morph`);
+      const clip = decodeWav(message.result.clip), scene = decodeWav(message.result.sceneClip);
+      assert.ok(scene.samples.subarray(0, scene.sampleRate).every((x) => x === 0));
+      assert.deepEqual(scene.samples.subarray(scene.sampleRate, scene.sampleRate + clip.samples.length), clip.samples);
+      assert.ok(clip.samples.every((x) => Number.isFinite(x) && Math.abs(x) <= 0.9001));
+      assert.equal(rms(clip.samples, Math.ceil(1.34 * recipe.sampleRate), Math.ceil(1.44 * recipe.sampleRate)), 0);
+    }
+    worker.onmessage({ data: { recipe: original, sources: {}, preRoll: 1, sceneSeconds: 5.1 } });
+    assert.ok(message.error); // decode failures are reported to the slider
 
     // An explicitly requested bad bank cannot silently fall back to the synth
     // or overwrite a previously generated comparison.
@@ -137,6 +163,12 @@ test('without a bank the audition keeps its twelve formant comparisons and label
     assert.equal(report.variants.length, 12);
     assert.ok(report.variants.every((v) => v.engine === 'formant' && !v.bank && !v.used));
     assert.equal(fs.existsSync(path.join(dir, 'voice.bank.wav')), false);
+    const html = fs.readFileSync(path.join(dir, 'index.html'), 'utf8');
+    const script = html.match(/<script>([\s\S]*?)<\/script>/)[1];
+    new vm.Script(script);
+    const embedded = vm.runInNewContext(script.slice(0, script.indexOf('const $=')) + '\n({DATA,MORPH_WORKER})');
+    assert.equal(embedded.MORPH_WORKER, '');
+    assert.equal(Object.keys(embedded.DATA.sources).length, 0);
   } finally {
     assert.equal(path.dirname(path.resolve(dir)), path.resolve(os.tmpdir()));
     fs.rmSync(dir, { recursive: true, force: true });

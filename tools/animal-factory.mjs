@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { render, encodeWav, decodeBank, mouthCues, revealSchedule, compactVoice } from '../src/index.mjs';
 import { rms, db } from './analyze.mjs';
 import { morphTimbre } from './morph-audio.mjs';
+import { bundle } from './build-standalone.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const example = JSON.parse(fs.readFileSync(path.join(root, 'examples/animal-factory/handler.json'), 'utf8'));
@@ -134,7 +135,7 @@ const morphs = bank ? layering.pairs.map((pair) => {
       { role: 'carrier', id: pair.speech, label: speechTake.label, engine: 'formant', clip: speechTake.clip, voice: speechTake.voice },
       { role: 'colour', id: pair.slices, label: slicesTake.label, engine: 'sampler', clip: slicesTake.clip, voice: slicesTake.voice },
     ] };
-  return saveTake({ id, label: pair.label.replace('Layered hen', 'Halfway hen'), engine: 'morph', group: 'HALFWAY TIMBRE MORPHS', timing, recipe,
+  return saveTake({ id, label: pair.label.replace('Layered hen', 'Morph hen'), engine: 'morph', group: 'ADJUSTABLE TIMBRE MORPHS', timing, recipe,
     tag: `${Math.round(morphing.amount * 100)}% tone-colour morph · speech pitch and timing`, morphMetrics: morph.metrics,
     note: `${speechTake.label} with its spectral envelope moved ${Math.round(morphing.amount * 100)}% toward ${slicesTake.label}. Keeps the speech pitch and rhythm. This is a midpoint of measured tone colour; judge the character by listening.` },
   { ...speech, samples: morph.samples, used: slices.used });
@@ -145,8 +146,19 @@ const report = { text: example.text, reference: sequence ? 'Local game room-02 s
 fs.writeFileSync(path.join(out, 'report.json'), JSON.stringify(report, null, 2));
 fs.writeFileSync(path.join(out, 'cast.json'), JSON.stringify(Object.fromEntries(singles.map((v) => [v.id, v.voice])), null, 2));
 
-const data = JSON.stringify({ example, sequence, results, bank: bankInfo }).replace(/</g, '\\u003c');
+// Preserve the exact pre-WAV Float32 sources so the browser and offline morphs
+// are identical. Embedded samples also work when this page is opened locally.
+const sources = Object.fromEntries([...new Set(morphs.flatMap((v) => v.recipe.sources.map((s) => s.id)))].map((id) => {
+  const samples = rendered.get(id).samples, bytes = Buffer.alloc(samples.length * 4);
+  for (let i = 0; i < samples.length; i++) bytes.writeFloatLE(samples[i], i * 4);
+  return [id, bytes.toString('base64')];
+}));
+const data = JSON.stringify({ example, sequence, results, bank: bankInfo, sources }).replace(/</g, '\\u003c');
+const workerSource = bank ? bundle(['tools/audition-morph-render.mjs']) +
+  "self.onmessage = ({data}) => __m['tools/audition-morph-render.mjs'].handleMorphMessage(data, (value, transfer) => self.postMessage(value, transfer));\n" : '';
+const controlSource = bundle(['tools/audition-morph-control.mjs']);
 const template = fs.readFileSync(path.join(root, 'tools/animal-factory.html'), 'utf8');
-fs.writeFileSync(path.join(out, 'index.html'), template.replace('/*AUDITION_DATA*/', () => `const DATA = ${data};`));
+fs.writeFileSync(path.join(out, 'index.html'), template.replace('/*AUDITION_DATA*/', () =>
+  `const DATA = ${data};\nconst MORPH_WORKER = ${JSON.stringify(workerSource).replace(/</g, '\\u003c')};\n${controlSource}`));
 console.log(path.join(out, 'index.html'));
 console.log(JSON.stringify(results.map(({ id, maxCueErrorMs, peakDbFS }) => ({ id, maxCueErrorMs, peakDbFS })), null, 2));
