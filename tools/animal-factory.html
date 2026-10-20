@@ -4,7 +4,7 @@
 <style>
 *{box-sizing:border-box}body{margin:0;background:#171f1c;color:#eee7d5;font:16px/1.5 system-ui,sans-serif}main{max-width:1180px;margin:auto;padding:28px}header{border-bottom:1px solid #425046;padding-bottom:18px;margin-bottom:20px}.eyebrow{font:12px monospace;color:#d3b46f;letter-spacing:.12em}h1{font:normal 32px Georgia,serif;margin:8px 0}p{margin:8px 0;color:#bfc8bc}.layout{display:grid;grid-template-columns:minmax(0,1fr) 310px;gap:24px}canvas{display:block;width:100%;background:#202d25;border:1px solid #425046;border-radius:6px}audio{width:100%;margin:15px 0}.choice{display:block;width:100%;text-align:left;margin-bottom:8px;padding:12px;border:1px solid #425046;background:#222e27;color:inherit;border-radius:5px;font:inherit;cursor:pointer}.choice[aria-pressed=true]{border-color:#d3b46f;background:#344033}.choice small{display:block;color:#bfc8bc;font:12px monospace;margin-top:4px}.primary{padding:9px 16px;background:#d3b46f;color:#171f1c;border:0;border-radius:4px;font:inherit;cursor:pointer}.caption{font:22px/1.4 Georgia,serif;margin:16px 0;color:#eee7d5}.links{display:flex;gap:16px;margin:16px 0}a{color:#dfbf79}#clock,#metrics{font:12px/1.7 monospace;color:#bfc8bc}footer{border-top:1px solid #425046;margin-top:24px;padding-top:12px;font-size:13px}button:focus-visible,a:focus-visible{outline:2px solid #dfbf79;outline-offset:3px}@media(max-width:800px){main{padding:16px}.layout{grid-template-columns:1fr}h1{font-size:26px}}
 .preview{position:sticky;top:20px;align-self:start}.controls{display:flex;align-items:center;flex-wrap:wrap;gap:8px}.secondary{padding:9px 12px;background:#222e27;color:#eee7d5;border:1px solid #425046;border-radius:4px;font:inherit;cursor:pointer}#choices{max-height:510px;overflow:auto;padding:2px 7px 2px 2px;scrollbar-color:#697b64 #222e27}.group{font:12px monospace;color:#d3b46f;margin:8px 0 12px;letter-spacing:.06em}#takeName{font:24px Georgia,serif;margin:14px 0 10px}.links{flex-wrap:wrap}@media(max-width:800px){.preview{position:static}#choices{max-height:430px}}
-.morph{padding:14px 16px;margin:16px 0;border:1px solid #697b64;border-radius:6px;background:#222e27}.morph-head,.morph-ends{display:flex;align-items:center;justify-content:space-between;gap:12px}.morph-head label{font-weight:600}.morph-head output{color:#dfbf79;font-variant-numeric:tabular-nums}.morph-ends{font-size:13px;color:#bfc8bc}.morph-ends span:last-child{text-align:right}#morphAmount{width:100%;margin:16px 0 8px;accent-color:#d3b46f;cursor:pointer}#morphHelp,#morphStatus{font-size:13px}#morphStatus{min-height:1.5em;color:#dfbf79}#resetMorph{padding:4px 9px;font-size:13px}input:focus-visible{outline:2px solid #dfbf79;outline-offset:3px}button:disabled,a[aria-disabled=true],audio[aria-disabled=true]{opacity:.5;cursor:wait}audio[aria-disabled=true]{pointer-events:none}
+.morph{padding:14px 16px;margin:16px 0;border:1px solid #697b64;border-radius:6px;background:#222e27}.morph-head,.morph-ends{display:flex;align-items:center;justify-content:space-between;gap:12px}.morph-head label{font-weight:600}.morph-head output{color:#dfbf79;font-variant-numeric:tabular-nums}.morph-ends{font-size:13px;color:#bfc8bc}.morph-ends span:last-child{text-align:right}.morph input[type=range]{width:100%;margin:16px 0 8px;accent-color:#d3b46f;cursor:pointer}#morphHelp,#sliceHelp,#morphStatus{font-size:13px}#morphStatus{min-height:1.5em;color:#dfbf79}#resetMorph,#muteSlices{padding:4px 9px;font-size:13px}.slice-control{border-top:1px solid #425046;margin-top:14px;padding-top:14px}input:focus-visible{outline:2px solid #dfbf79;outline-offset:3px}button:disabled,a[aria-disabled=true],audio[aria-disabled=true]{opacity:.5;cursor:wait}audio[aria-disabled=true]{pointer-events:none}
 </style></head><body><main>
 <header><div class="eyebrow">BABBLE LAB / ANIMAL FACTORY TACTICS</div><h1>The hen at the microphone</h1><p id="intro">Compare voices in the same shot. Click a voice to hear it with the scene.</p></header>
 <div class="layout"><section class="preview">
@@ -17,6 +17,12 @@
  <input id="morphAmount" type="range" min="0" max="100" step="1" aria-describedby="morphHelp">
  <div class="morph-ends"><span>0% · Speech tone</span><span>100% · Sliced-audio tone</span></div>
  <p id="morphHelp">Pitch and timing stay with the speech. Release the slider to hear the new setting.</p>
+ <div class="slice-control">
+  <div class="morph-head"><label for="sliceVolume">Beeps &amp; boops volume</label><output id="sliceValue" for="sliceVolume"></output><button id="muteSlices" class="secondary">Mute slices</button></div>
+  <input id="sliceVolume" type="range" min="0" max="100" step="1" aria-describedby="sliceHelp">
+  <div class="morph-ends"><span>0% · Muted</span><span>100% · Equal level</span></div>
+  <p id="sliceHelp">Adds the original sliced audio over the morphed voice. At 100%, the slices match the voice’s average level. Release to listen.</p>
+ </div>
  <p id="morphStatus" role="status" aria-live="polite"></p>
 </div>
 <div class="controls"><button id="previous" class="secondary" aria-label="Play previous voice">Previous</button><button id="replay" class="primary">Play selected take</button><button id="next" class="secondary" aria-label="Play next voice">Next voice</button></div><p id="clock"></p>
@@ -27,7 +33,7 @@
 <p id="exportNote"></p>
 <p id="bankNote"></p>
 <p id="status" role="status">Loading reference…</p></aside></div>
-<footer>Morph takes reshape the tone colour while retaining speech pitch and timing. At 100%, the tone colour follows the slices; use a Music slices take to hear the sliced recording itself. Layered takes add both recordings together. Formant takes use the synthesizer. The original narrator is the default formant voice, not an original game soundtrack. Cue error measures scheduled syllable boundaries, not perceived lip-sync or sound quality. Level matching adjusts playback volume using average signal energy; downloaded WAVs keep their original level. The voice-only WAV starts at the line; this player adds one second of pre-roll. <a href="report.json">Measurements at the initial settings</a></footer>
+<footer>Voice morph reshapes the tone colour while retaining speech pitch and timing. Beeps &amp; boops adds a separate layer of the actual sliced recording; mute it to hear the morph alone. Music slices takes play the sampled recording alone. Layered takes add the earlier speech and slices together. Formant takes use the synthesizer. The original narrator is the default formant voice, not an original game soundtrack. Cue error measures scheduled syllable boundaries, not perceived lip-sync or sound quality. Level matching adjusts playback volume using average signal energy; downloaded WAVs include both layers at your selected balance. The voice-only WAV starts at the line; this player adds one second of pre-roll. <a href="report.json">Measurements at the initial settings</a></footer>
 </main><script>
 /*AUDITION_DATA*/
 const $=id=>document.getElementById(id), audio=$('audio'), canvas=$('scene'), g=canvas.getContext('2d');
@@ -49,7 +55,7 @@ const morph=__m['tools/audition-morph-control.mjs'].createMorphControl({
  onUpdate:showTake,
 });
 $('caption').textContent=example.text;
-$('intro').textContent=DATA.bank?'Try the broader cast under Character morphs, or the expanded Hen morphs. Each starts at 70%; use the slider to adjust its tone toward the music slices.':'Hen and character speech voices. No music sample bank was supplied for this audition.';
+$('intro').textContent=DATA.bank?'Try the Character morphs or Hen morphs. Adjust the voice’s tone and bring back the original sliced-audio beeps with their own volume slider.':'Hen and character speech voices. No music sample bank was supplied for this audition.';
 if(DATA.bank){
  $('bank').hidden=false;$('bank').href=DATA.bank.file;
  $('bankNote').textContent=`Bank: ${DATA.bank.source||DATA.bank.name} · ${DATA.bank.segments} pieces of ${DATA.bank.segmentSeconds} s. To reuse a sliced voice JSON, load this sample bank too.${DATA.bank.note?' '+DATA.bank.note:''}`;
@@ -84,7 +90,7 @@ function assets(state){
  return downloads.get(id);
 }
 function showTake(state){
- const v=state.take, isMorph=v.engine==='morph', playable=state.status==='ready', percent=Math.round(state.amount*100);
+ const v=state.take, isMorph=v.engine==='morph', playable=state.status==='ready', percent=Math.round(state.amount*100), slicePercent=Math.round(state.sliceLevel*100);
  audio.pause();cancelAnimationFrame(frame);
  $('morphControls').hidden=!isMorph;
  if(isMorph){
@@ -93,8 +99,11 @@ function showTake(state){
   $('resetMorph').setAttribute('aria-label',`Reset voice morph to ${defaultPercent} percent`);
   $('morphAmount').value=percent;$('morphValue').textContent=percent+'%';
   $('morphAmount').setAttribute('aria-valuetext',`${percent}% toward sliced-audio tone`);
-  $('morphStatus').textContent=state.status==='error'?`Could not render: ${state.error} Move the slider to try again.`:playable?`${percent}% ready · WAV and recipe use this setting`:`Rendering ${percent}%…`;
-  $('choices').querySelectorAll('button')[selected].querySelector('small').textContent=`${percent}% tone-colour morph · speech pitch and timing`;
+  $('sliceVolume').value=slicePercent;$('sliceValue').textContent=slicePercent+'%';
+  $('sliceVolume').setAttribute('aria-valuetext',slicePercent?`${slicePercent}% of the voice's average level`:'Muted');
+  const balance=`${percent}% morph · slices ${slicePercent}%`;
+  $('morphStatus').textContent=state.status==='error'?`Could not render: ${state.error} Move either slider to try again.`:playable?`${balance} ready · downloads use both settings`:`Rendering ${balance}…`;
+  $('choices').querySelectorAll('button')[selected].querySelector('small').textContent=balance;
  }
  $('replay').disabled=!playable;
  audio.setAttribute('aria-disabled',String(!playable));audio.tabIndex=playable?0:-1;
@@ -109,11 +118,11 @@ function showTake(state){
   $('voice').href=state.output?urls.recipe:v.recipeFile??v.voiceFile;$('voice').download=v.recipeFile??v.voiceFile;
  }else audio.removeAttribute('src');
  audio.load();matchLevel();
- $('note').textContent=isMorph?`${v.recipe.sources[0].label} with its tone colour moved ${percent}% toward ${v.recipe.sources[1].label}. The speech pitch and rhythm stay the same.`:v.note;
- $('voice').textContent=v.engine==='morph'?'Morph recipe JSON':v.recipe?'Mix recipe JSON':'Voice JSON';
- $('exportNote').textContent=isMorph?'Download the current morphed WAV for your game. Its recipe and game cues include the chosen percentage. Settings are remembered per voice until you reload the page.':v.recipe?'Use the mixed WAV in your game. The mix recipe records both source voices and their volume settings.':'';
+ $('note').textContent=isMorph?`${v.recipe.sources[0].label} with its tone colour moved ${percent}% toward ${v.recipe.sources[1].label}. ${slicePercent?`The original slices play over it at ${slicePercent}% of the voice’s average level.`:'The separate slice layer is muted.'}`:v.note;
+ $('voice').textContent=v.engine==='morph'?'Morph + slices recipe JSON':v.recipe?'Mix recipe JSON':'Voice JSON';
+ $('exportNote').textContent=isMorph?'Download the current WAV for your game. The audio, recipe and game cues include both slider settings. Settings are remembered per voice until you reload the page.':v.recipe?'Use the mixed WAV in your game. The mix recipe records both source voices and their volume settings.':'';
  $('takeName').textContent=`${selected+1} / ${results.length} · ${v.label}`;
- $('source').textContent=isMorph?`Tone colour: ${v.recipe.sources[0].label} → ${percent}% toward ${v.recipe.sources[1].label}`:v.engine==='layered'?`Layers: ${v.recipe.layers.map(l=>l.label).join(' + ')}`:v.engine==='sampler'?`Source: music slices · ${v.bank.source||v.bank.name} · ${((v.voice.pitch??140)/140).toFixed(2)}× base speed · ${v.used.length} slice selections`:'Source: formant synthesizer';
+ $('source').textContent=isMorph?`${percent}% tone morph · original slices ${slicePercent}% · ${v.recipe.sources[1].label}`:v.engine==='layered'?`Layers: ${v.recipe.layers.map(l=>l.label).join(' + ')}`:v.engine==='sampler'?`Source: music slices · ${v.bank.source||v.bank.name} · ${((v.voice.pitch??140)/140).toFixed(2)}× base speed · ${v.used.length} slice selections`:'Source: formant synthesizer';
  $('metrics').textContent=playable?`${v.audioSeconds.toFixed(2)} s voice WAV · peak ${v.peakDbFS.toFixed(1)} dBFS · maximum cue error ${v.maxCueErrorMs.toFixed(1)} ms`:'Playback and downloads will be ready when the new setting finishes rendering.';
  if(state.status==='error')wantsPlay=false;
  draw();
@@ -137,6 +146,9 @@ $('replay').onclick=play;
 $('morphAmount').oninput=()=>{wantsPlay=false;morph.change(Number($('morphAmount').value)/100);};
 $('morphAmount').onchange=play;
 $('resetMorph').onclick=()=>{wantsPlay=false;morph.change(morph.current.base.recipe.settings.amount);play();};
+$('sliceVolume').oninput=()=>{wantsPlay=false;morph.changeSlices(Number($('sliceVolume').value)/100);};
+$('sliceVolume').onchange=play;
+$('muteSlices').onclick=()=>{wantsPlay=false;morph.changeSlices(0);play();};
 function advance(direction){choose((selected+direction+results.length)%results.length);$('choices').querySelectorAll('button')[selected].scrollIntoView({block:'nearest'});play();}
 $('previous').onclick=()=>advance(-1);$('next').onclick=()=>advance(1);
 function saveJSON(name,value){

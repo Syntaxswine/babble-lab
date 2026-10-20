@@ -187,23 +187,31 @@ hen and radio hen, fitted to the beak. The original six morph pairings remain.
 `examples/animal-factory/morph-pairs.json` records each speech/slices pairing.
 The **Voice morph** slider starts at 70% and runs from
 0% speech tone to 100% sliced-audio tone. Release it to render and replay the
-new setting; each voice remembers its percentage until the page is reloaded.
-The Voice WAV, morph recipe and game cues downloads all use the selected
-percentage. Playback and exports wait for rendering to finish, and changing
-the slider or voice cancels obsolete work. Reset to 70% restores the preferred
-starting take; the reset button follows the default in the morph settings.
+new setting. **Beeps & boops volume** independently adds the original sampled
+performance over that voice. It starts at 50%: half the voice's average amplitude
+(about −6 dB). At 0% it is muted, recovering the previous pure morph; at 100%
+it matches the morphed voice's RMS level. **Mute slices** silences only this
+extra layer. `examples/animal-factory/slice-layer.json` sets its starting level.
+Each voice remembers both sliders until the page is reloaded.
+The Voice WAV, morph recipe and game cues downloads use both settings.
+Playback and exports wait for rendering to finish, and changing either slider
+or voice cancels obsolete work. Reset to 70% restores the preferred morph
+amount while keeping the slice volume; the button follows the morph default.
 
 The worker and exact Float32 source tracks are embedded in the generated page,
 so the slider works offline without a server or fetching local audio files.
 Rendering runs in a short-lived worker that stops on completion, cancellation,
-or leaving the page. The sources increase the local HTML size by about 20 MB;
+or leaving the page. After the first slider render, its pure morph is cached
+per voice so volume-only changes can reuse the spectral calculation.
+The sources increase the local HTML size by about 20 MB;
 they remain in ignored `audition/`, alongside the generated recordings.
 
 Morphs interpolate smooth spectral envelopes in log
 amplitude, retaining the speech track's phase, harmonic structure and timing.
 At 50%, the target envelope is `sqrt(E_speech * E_slices)`; the speech spectrum
 is reshaped toward it. This is a tone-colour midpoint, not a pitch midpoint
-or a guarantee of a perceptually halfway voice. It does not add the two tracks.
+or a guarantee of a perceptually halfway voice. This stage does not add the tracks;
+the separate Beeps & boops layer adds the sampler waveform after the morph.
 At 100%, the speech keeps its pitch and timing while taking the sliced track's
 tone colour. Choose a **Music slices** take to hear the sliced recording itself.
 
@@ -224,8 +232,23 @@ with `sourceAlignment: "pad-end-with-silence"`, render the two sources and call
 `const [carrier, colour] = padMorphSources(speech.samples, slices.samples)`
 to obtain equal-length tracks. Then call
 `morphTimbre(carrier, colour, sampleRate, { ...recipe.settings,
-cues: recipe.timing.cues })` to reproduce the result. Morph recipes are not
-single-voice presets. The original synth and sampler remain unchanged.
+cues: recipe.timing.cues })` to obtain the pure morph. Version 1 recipes end
+there. Version 2 (`babbleMorph: 2`) then adds the separate layer:
+
+```js
+import { mixSliceLayer } from './tools/mix-slice-layer.mjs';
+const mixed = mixSliceLayer(
+  morph.samples, colour, recipe.sliceLayer.level, recipe.settings.peakLimit,
+);
+```
+
+The `rms-overlay-v1` layer gain is `level * RMS(morph) / RMS(colour)`.
+The helper adds the unchanged sampled waveform, preserving its timing, and
+attenuates both layers together only if needed to keep the peak at or below
+the configured limit (0.9). Silent slices add nothing. No extra cue gate is
+applied to this layer, so the sampler's own tails remain intact.
+Morph recipes describe both sources and are not single-voice presets.
+The original synth and sampler remain unchanged.
 
 Six **layered** takes follow: the sliced voices over the earlier speech voices, using their
 existing performances and identical speech cues. The pairs are bright/bright,

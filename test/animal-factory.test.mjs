@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { makeBank, encodeBank, decodeBank, encodeWav, decodeWav, render } from '../src/index.mjs';
 import { rms } from '../tools/analyze.mjs';
 import { morphTimbre, padMorphSources } from '../tools/morph-audio.mjs';
+import { mixSliceLayer } from '../tools/mix-slice-layer.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const generate = (...args) => spawnSync(process.execPath, [path.join(root, 'tools/animal-factory.mjs'), ...args], { encoding: 'utf8', timeout: 60000 });
@@ -101,8 +102,9 @@ test('scene audition exports the existing sampler output, its recording and all 
     assert.equal(new Set(seenIds).size, seenIds.length);
     for (const v of morphs) {
       const recipe = readJSON(path.join(out, v.recipeFile));
-      assert.equal(recipe.babbleMorph, 1);
+      assert.equal(recipe.babbleMorph, 2);
       assert.equal(recipe.settings.amount, 0.7);
+      assert.deepEqual(recipe.sliceLayer, { algorithm: 'rms-overlay-v1', level: 0.5 });
       assert.equal(recipe.sourceAlignment, 'pad-end-with-silence');
       assert.deepEqual(readJSON(path.join(out, v.cueFile)).morph, recipe);
       assert.equal(v.voice, undefined);
@@ -112,7 +114,9 @@ test('scene audition exports the existing sampler output, its recording and all 
       }));
       const [carrier, colour] = padMorphSources(sources[0].samples, sources[1].samples);
       const rebuilt = morphTimbre(carrier, colour, recipe.sampleRate, { ...recipe.settings, cues: recipe.timing.cues });
-      assert.deepEqual(fs.readFileSync(path.join(out, v.clip)), Buffer.from(encodeWav(rebuilt.samples, recipe.sampleRate)));
+      const layered = mixSliceLayer(rebuilt.samples, colour, recipe.sliceLayer.level, recipe.settings.peakLimit);
+      assert.deepEqual(fs.readFileSync(path.join(out, v.clip)), Buffer.from(encodeWav(layered.samples, recipe.sampleRate)));
+      assert.deepEqual(v.sliceLayerMetrics, layered.metrics);
       assert.equal(v.maxCueErrorMs, 0);
       assert.equal(v.used.length, 14);
       assert.ok(rebuilt.samples.every((x) => Number.isFinite(x) && Math.abs(x) <= 0.9001));
@@ -125,6 +129,7 @@ test('scene audition exports the existing sampler output, its recording and all 
     assert.match(html, /MUSIC SLICES/);
     assert.match(html, /FORMANT SPEECH/);
     assert.match(html, /id="morphAmount" type="range" min="0" max="100" step="1"/);
+    assert.match(html, /id="sliceVolume" type="range" min="0" max="100" step="1"/);
     const embedded = vm.runInNewContext(script.slice(0, script.indexOf('const $=')) + '\n({DATA,MORPH_WORKER})');
     assert.equal(Object.keys(embedded.DATA.sources).length, 28);
     // Exercise the actual bundled worker with the embedded full-precision
@@ -137,18 +142,19 @@ test('scene audition exports the existing sampler output, its recording and all 
       sampleRate: original.sampleRate, timing: original.timing, bank: s.engine === 'sampler' ? bank : undefined,
     }));
     assert.ok(sourceTracks[0].samples.length > sourceTracks[1].samples.length, 'ghost must exercise effects-tail alignment');
-    for (const amount of [0, 0.5, 0.73, 1]) {
-      const recipe = { ...original, settings: { ...original.settings, amount } };
+    for (const [amount, level] of [[0, 0.5], [0.5, 1], [0.73, 0], [1, 0.23]]) {
+      const recipe = { ...original, settings: { ...original.settings, amount }, sliceLayer: { ...original.sliceLayer, level } };
       worker.onmessage({ data: { recipe, sources: embedded.DATA.sources, preRoll: 1, sceneSeconds: 5.1 } });
       assert.equal(message.error, undefined);
       const [carrier, colour] = padMorphSources(sourceTracks[0].samples, sourceTracks[1].samples);
-      const expected = morphTimbre(carrier, colour, recipe.sampleRate, { ...recipe.settings, cues: recipe.timing.cues });
+      const pureMorph = morphTimbre(carrier, colour, recipe.sampleRate, { ...recipe.settings, cues: recipe.timing.cues });
+      const expected = mixSliceLayer(pureMorph.samples, colour, level, recipe.settings.peakLimit);
       assert.deepEqual(Buffer.from(message.result.clip), Buffer.from(encodeWav(expected.samples, recipe.sampleRate)), `browser ${amount} diverged from the offline morph`);
       const clip = decodeWav(message.result.clip), scene = decodeWav(message.result.sceneClip);
       assert.ok(scene.samples.subarray(0, scene.sampleRate).every((x) => x === 0));
       assert.deepEqual(scene.samples.subarray(scene.sampleRate, scene.sampleRate + clip.samples.length), clip.samples);
       assert.ok(clip.samples.every((x) => Number.isFinite(x) && Math.abs(x) <= 0.9001));
-      assert.equal(rms(clip.samples, Math.ceil(1.34 * recipe.sampleRate), Math.ceil(1.44 * recipe.sampleRate)), 0);
+      if (level === 0) assert.equal(rms(clip.samples, Math.ceil(1.34 * recipe.sampleRate), Math.ceil(1.44 * recipe.sampleRate)), 0);
     }
     worker.onmessage({ data: { recipe: original, sources: {}, preRoll: 1, sceneSeconds: 5.1 } });
     assert.ok(message.error); // decode failures are reported to the slider

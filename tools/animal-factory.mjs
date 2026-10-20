@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { render, encodeWav, decodeBank, mouthCues, revealSchedule, compactVoice, PRESETS, resolveVoice } from '../src/index.mjs';
 import { rms, db } from './analyze.mjs';
 import { morphTimbre, padMorphSources } from './morph-audio.mjs';
+import { mixSliceLayer } from './mix-slice-layer.mjs';
 import { bundle } from './build-standalone.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -17,6 +18,7 @@ const characters = JSON.parse(fs.readFileSync(path.join(root, 'examples/animal-f
 const bankTrials = JSON.parse(fs.readFileSync(path.join(root, 'examples/animal-factory/bank-voices.json'), 'utf8'));
 const layering = JSON.parse(fs.readFileSync(path.join(root, 'examples/animal-factory/layers.json'), 'utf8'));
 const morphing = JSON.parse(fs.readFileSync(path.join(root, 'examples/animal-factory/morph.json'), 'utf8'));
+const sliceLayer = JSON.parse(fs.readFileSync(path.join(root, 'examples/animal-factory/slice-layer.json'), 'utf8'));
 const morphPairs = JSON.parse(fs.readFileSync(path.join(root, 'examples/animal-factory/morph-pairs.json'), 'utf8'));
 let game, bankFile, out = path.join(root, 'audition/animal-factory');
 for (let i = 2; i < process.argv.length; i++) {
@@ -140,16 +142,18 @@ const morphs = bank ? morphPairs.map((pair) => {
   const id = pair.id;
   const [carrier, colour] = padMorphSources(speech.samples, slices.samples);
   const morph = morphTimbre(carrier, colour, sampleRate, { ...morphing, cues: timing.cues });
-  const recipe = { babbleMorph: 1, algorithm: 'cepstral-envelope-v1', name: id, text: example.text,
-    sampleRate, take: 0, timing, settings: morphing, bank: bankInfo, sourceAlignment: 'pad-end-with-silence',
+  if (sliceLayer.algorithm !== 'rms-overlay-v1') throw new Error('Unsupported slice layer algorithm');
+  const mix = mixSliceLayer(morph.samples, colour, sliceLayer.level, morphing.peakLimit);
+  const recipe = { babbleMorph: 2, algorithm: 'cepstral-envelope-v1', name: id, text: example.text,
+    sampleRate, take: 0, timing, settings: morphing, sliceLayer, bank: bankInfo, sourceAlignment: 'pad-end-with-silence',
     sources: [
       { role: 'carrier', id: pair.speech, label: speechTake.label, engine: 'formant', clip: speechTake.clip, voice: speechTake.voice },
       { role: 'colour', id: pair.slices, label: slicesTake.label, engine: 'sampler', clip: slicesTake.clip, voice: slicesTake.voice },
     ] };
   return saveTake({ id, label: pair.label, engine: 'morph', group: pair.group, timing, recipe,
-    tag: `${Math.round(morphing.amount * 100)}% tone-colour morph · speech pitch and timing`, morphMetrics: morph.metrics,
-    note: `${speechTake.label} with its spectral envelope moved ${Math.round(morphing.amount * 100)}% toward ${slicesTake.label}. Keeps the speech pitch and rhythm. Adjust the amount with the audition slider.` },
-  { ...speech, samples: morph.samples, used: slices.used });
+    tag: `${Math.round(morphing.amount * 100)}% morph · slices ${Math.round(sliceLayer.level * 100)}%`, morphMetrics: morph.metrics, sliceLayerMetrics: mix.metrics,
+    note: `${speechTake.label} morphed ${Math.round(morphing.amount * 100)}% toward ${slicesTake.label}, with the original sliced track added at ${Math.round(sliceLayer.level * 100)}% of the morphed voice's average level. Adjust tone and added slices independently.` },
+  { ...speech, samples: mix.samples, used: slices.used });
 }) : [];
 const results = [...morphs, ...mixes, ...singles];
 const report = { text: example.text, reference: sequence ? 'Local game room-02 sprite sequence; speech cues verified against the fixture' : 'No game assets supplied; timing fixture only',
