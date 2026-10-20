@@ -1,0 +1,44 @@
+[
+  {
+    "id": "sliced-bright-hen",
+    "label": "Sliced hen · bright",
+    "tag": "Music slices · 2× tape speed",
+    "note": "Real slices from the loaded recording, selected by the existing sampler. Twice the recorded speed, following the hen’s 14 speech cues.",
+    "voice": { "name": "sliced-bright-hen", "pitch": 280, "range": 6, "lilt": 0.22 }
+  },
+  {
+    "id": "sliced-chirpy-hen",
+    "label": "Sliced hen · chirpy",
+    "tag": "Music slices · 2.5× tape speed",
+    "note": "Higher slices with a wider pitch contour and a little wobble. The sound comes entirely from the recording.",
+    "voice": { "name": "sliced-chirpy-hen", "pitch": 350, "range": 9, "lilt": 0.32, "vibDepth": 0.15, "vibRate": 8 }
+  },
+  {
+    "id": "sliced-tiny-hen",
+    "label": "Sliced hen · tiny",
+    "tag": "Music slices · 3× tape speed",
+    "note": "The highest sliced take: three times the recorded speed, with the same animation timing.",
+    "voice": { "name": "sliced-tiny-hen", "pitch": 420, "range": 7, "lilt": 0.25 }
+  },
+  {
+    "id": "sliced-clucking-hen",
+    "label": "Sliced hen · clucking",
+    "tag": "Music slices · cluck syllables · 2.5×",
+    "note": "The hen syllabary steers the existing sampler toward short, struck openings. All audible sound still comes from music slices.",
+    "voice": { "preset": "hen", "name": "sliced-clucking-hen", "pitch": 350 }
+  },
+  {
+    "id": "sliced-radio-hen",
+    "label": "Sliced hen · radio",
+    "tag": "Music slices · clucks through the radio",
+    "note": "The same sliced clucking take through the existing radio filter, for comparison in the microphone shot.",
+    "voice": { "preset": "hen-radio", "name": "sliced-radio-hen", "pitch": 350 }
+  },
+  {
+    "id": "sliced-original-speed",
+    "label": "Slices · original speed",
+    "tag": "Music slices · 1× tape speed",
+    "note": "A reference at the recording’s original base speed. The line’s pitch contour still bends playback speed, as in the existing sampler.",
+    "voice": { "name": "sliced-original-speed", "pitch": 140 }
+  }
+]

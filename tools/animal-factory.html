@@ -5,18 +5,20 @@
 *{box-sizing:border-box}body{margin:0;background:#171f1c;color:#eee7d5;font:16px/1.5 system-ui,sans-serif}main{max-width:1180px;margin:auto;padding:28px}header{border-bottom:1px solid #425046;padding-bottom:18px;margin-bottom:20px}.eyebrow{font:12px monospace;color:#d3b46f;letter-spacing:.12em}h1{font:normal 32px Georgia,serif;margin:8px 0}p{margin:8px 0;color:#bfc8bc}.layout{display:grid;grid-template-columns:minmax(0,1fr) 310px;gap:24px}canvas{display:block;width:100%;background:#202d25;border:1px solid #425046;border-radius:6px}audio{width:100%;margin:15px 0}.choice{display:block;width:100%;text-align:left;margin-bottom:8px;padding:12px;border:1px solid #425046;background:#222e27;color:inherit;border-radius:5px;font:inherit;cursor:pointer}.choice[aria-pressed=true]{border-color:#d3b46f;background:#344033}.choice small{display:block;color:#bfc8bc;font:12px monospace;margin-top:4px}.primary{padding:9px 16px;background:#d3b46f;color:#171f1c;border:0;border-radius:4px;font:inherit;cursor:pointer}.caption{font:22px/1.4 Georgia,serif;margin:16px 0;color:#eee7d5}.links{display:flex;gap:16px;margin:16px 0}a{color:#dfbf79}#clock,#metrics{font:12px/1.7 monospace;color:#bfc8bc}footer{border-top:1px solid #425046;margin-top:24px;padding-top:12px;font-size:13px}button:focus-visible,a:focus-visible{outline:2px solid #dfbf79;outline-offset:3px}@media(max-width:800px){main{padding:16px}.layout{grid-template-columns:1fr}h1{font-size:26px}}
 .preview{position:sticky;top:20px;align-self:start}.controls{display:flex;align-items:center;flex-wrap:wrap;gap:8px}.secondary{padding:9px 12px;background:#222e27;color:#eee7d5;border:1px solid #425046;border-radius:4px;font:inherit;cursor:pointer}#choices{max-height:510px;overflow:auto;padding:2px 7px 2px 2px;scrollbar-color:#697b64 #222e27}.group{font:12px monospace;color:#d3b46f;margin:8px 0 12px;letter-spacing:.06em}#takeName{font:24px Georgia,serif;margin:14px 0 10px}.links{flex-wrap:wrap}@media(max-width:800px){.preview{position:static}#choices{max-height:430px}}
 </style></head><body><main>
-<header><div class="eyebrow">BABBLE LAB / ANIMAL FACTORY TACTICS</div><h1>The hen at the microphone</h1><p>Higher voices, animal character, and the original English sounds. Click a voice to hear it with the scene.</p></header>
+<header><div class="eyebrow">BABBLE LAB / ANIMAL FACTORY TACTICS</div><h1>The hen at the microphone</h1><p id="intro">Compare voices in the same shot. Click a voice to hear it with the scene.</p></header>
 <div class="layout"><section class="preview">
 <canvas id="scene" width="1600" height="900" aria-label="Chicken microphone shot from the introduction"></canvas>
 <audio id="audio" controls preload="auto"></audio>
 <h2 id="takeName"></h2>
+<p id="source"></p>
 <div class="controls"><button id="previous" class="secondary" aria-label="Play previous voice">Previous</button><button id="replay" class="primary">Play selected take</button><button id="next" class="secondary" aria-label="Play next voice">Next voice</button></div><p id="clock"></p>
 <p><label><input id="level" type="checkbox" checked> Match average listening level between takes</label></p>
 <p class="caption" id="caption"></p>
 </section><aside><div id="choices"></div><p id="note"></p><div id="metrics"></div>
-<div class="links"><a id="wav" download>Voice WAV</a><a id="voice" download>Voice JSON</a><a id="cues" download>Game cues JSON</a><a id="cast" href="cast.json" download>All voices</a></div>
+<div class="links"><a id="wav" download>Voice WAV</a><a id="voice" download>Voice JSON</a><a id="cues" download>Game cues JSON</a><a id="cast" href="cast.json" download>All voices</a><a id="bank" download hidden>Sample bank</a></div>
+<p id="bankNote"></p>
 <p id="status" role="status">Loading reference…</p></aside></div>
-<footer>Every take is generated locally by Babble Lab. The original narrator is the existing default engine, not an original game soundtrack. Cue error measures scheduled syllable boundaries, not perceived lip-sync or sound quality. Level matching adjusts playback volume using average signal energy; downloaded WAVs keep their original level. The voice-only WAV starts at the line; this player adds one second of pre-roll. <a href="report.json">Measurements</a></footer>
+<footer>Music-slice takes use the existing recording sampler; formant takes use the synthesizer. The original narrator is the default formant voice, not an original game soundtrack. Cue error measures scheduled syllable boundaries, not perceived lip-sync or sound quality. Level matching adjusts playback volume using average signal energy; downloaded WAVs keep their original level. The voice-only WAV starts at the line; this player adds one second of pre-roll. <a href="report.json">Measurements</a></footer>
 </main><script>
 /*AUDITION_DATA*/
 const $=id=>document.getElementById(id), audio=$('audio'), canvas=$('scene'), g=canvas.getContext('2d');
@@ -25,6 +27,11 @@ let selected=0, images=[], ready=false, frame=0;
 const targetLevel=Math.min(...results.map(r=>r.rmsDbFS));
 function matchLevel(){audio.volume=$('level').checked?Math.pow(10,(targetLevel-results[selected].rmsDbFS)/20):1;}
 $('caption').textContent=example.text;
+$('intro').textContent=DATA.bank?'Compare real music slices and formant speech in the hen’s microphone shot. Click a voice to hear it with the scene.':'Formant speech voices. No music sample bank was supplied for this audition.';
+if(DATA.bank){
+ $('bank').hidden=false;$('bank').href=DATA.bank.file;
+ $('bankNote').textContent=`Bank: ${DATA.bank.source||DATA.bank.name} · ${DATA.bank.segments} pieces of ${DATA.bank.segmentSeconds} s. To reuse a sliced voice JSON, load this sample bank too.${DATA.bank.note?' '+DATA.bank.note:''}`;
+}
 function draw(){
  const t=example.shotFrom+audio.currentTime;
  $('clock').textContent=`scene ${t.toFixed(2)} s · speech starts ${example.sceneStart.toFixed(2)} s`;
@@ -47,12 +54,13 @@ function choose(i){
  [...$('choices').querySelectorAll('button')].forEach((b,k)=>b.setAttribute('aria-pressed',String(k===i)));
  $('note').textContent=v.note;$('wav').href=v.clip;$('cues').href=v.cueFile;$('voice').href=v.voiceFile;
  $('takeName').textContent=`${i+1} / ${results.length} · ${v.label}`;
+ $('source').textContent=v.engine==='sampler'?`Source: music slices · ${v.bank.source||v.bank.name} · ${((v.voice.pitch??140)/140).toFixed(2)}× base speed · ${v.used.length} slice selections`:'Source: formant synthesizer';
  $('metrics').textContent=`${v.audioSeconds.toFixed(2)} s voice WAV · peak ${v.peakDbFS.toFixed(1)} dBFS · maximum cue error ${v.maxCueErrorMs.toFixed(1)} ms`;
  draw();
 }
 async function play(){audio.currentTime=0;try{await audio.play();}catch(e){if(e.name!=='AbortError')$('status').textContent=e.message;}}
 results.forEach((v,i)=>{
- if(i===0||(results[i-1].tag&&!v.tag)){const heading=document.createElement('div');heading.className='group';heading.textContent=v.tag?'NEW SPEECH VOICES':'EARLIER TAKES';$('choices').append(heading);}
+ if(i===0||results[i-1].group!==v.group){const heading=document.createElement('div');heading.className='group';heading.textContent=v.group;$('choices').append(heading);}
  const b=document.createElement('button');b.className='choice';b.textContent=v.label;const s=document.createElement('small');s.textContent=v.tag??(v.timing?'14 animation cues · 100 ms pause':'natural rhythm');b.append(s);b.onclick=()=>{choose(i);play();};$('choices').append(b);
 });
 $('replay').onclick=play;

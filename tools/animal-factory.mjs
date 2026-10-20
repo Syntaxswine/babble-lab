@@ -4,19 +4,29 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { render, encodeWav, mouthCues, revealSchedule, compactVoice } from '../src/index.mjs';
+import { render, encodeWav, decodeBank, mouthCues, revealSchedule, compactVoice } from '../src/index.mjs';
 import { rms, db } from './analyze.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const example = JSON.parse(fs.readFileSync(path.join(root, 'examples/animal-factory/handler.json'), 'utf8'));
 const timing = JSON.parse(fs.readFileSync(path.join(root, 'examples/animal-factory/handler.timing.json'), 'utf8'));
 const trials = JSON.parse(fs.readFileSync(path.join(root, 'examples/animal-factory/voices.json'), 'utf8'));
-let game, out = path.join(root, 'audition/animal-factory');
+const bankTrials = JSON.parse(fs.readFileSync(path.join(root, 'examples/animal-factory/bank-voices.json'), 'utf8'));
+let game, bankFile, out = path.join(root, 'audition/animal-factory');
 for (let i = 2; i < process.argv.length; i++) {
   const key = process.argv[i], value = process.argv[++i];
-  if (!value || !['--game', '-o', '--out'].includes(key)) throw new Error('usage: node tools/animal-factory.mjs [--game /path/to/AnimalFactory3D/game] [-o directory]');
-  if (key === '--game') game = path.resolve(value); else out = path.resolve(value);
+  if (!value || !['--game', '--bank', '-o', '--out'].includes(key)) throw new Error('usage: node tools/animal-factory.mjs [--game /path/to/AnimalFactory3D/game] [--bank file.bank.wav] [-o directory]');
+  if (key === '--game') game = path.resolve(value);
+  else if (key === '--bank') bankFile = path.resolve(value);
+  else out = path.resolve(value);
 }
+// Use the existing bank and sampler unchanged. A bad bank must fail rather
+// than silently substituting a synthetic voice for the requested recording.
+const bankBytes = bankFile ? fs.readFileSync(bankFile) : null;
+const bank = bankBytes ? decodeBank(bankBytes) : null;
+const bankInfo = bank ? { name: bank.name, source: bank.source, note: bank.note,
+  file: 'voice.bank.wav', sampleRate: bank.sampleRate, segmentSeconds: bank.segmentSeconds,
+  segments: bank.segments.length, looks: Object.fromEntries(Object.entries(bank.looks).map(([k, v]) => [k, v.length])) } : null;
 
 let sequence = null, referenceDir;
 if (game) {
@@ -28,6 +38,7 @@ if (game) {
   }
 }
 fs.mkdirSync(out, { recursive: true });
+if (bankBytes) fs.writeFileSync(path.join(out, bankInfo.file), bankBytes);
 if (sequence) {
   fs.mkdirSync(path.join(out, 'reference'), { recursive: true });
   for (const name of [sequence.plate, ...sequence.sheets]) {
@@ -38,14 +49,16 @@ if (sequence) {
 
 const sampleRate = 44100, preRoll = example.sceneStart - example.shotFrom;
 const variants = [
-  ...trials.map((v) => ({ ...v, timing })),
+  ...(bank ? bankTrials.map((v) => ({ ...v, voice: { ...v.voice, bank: bank.name }, timing, engine: 'sampler', group: 'MUSIC SLICES' })) : []),
+  ...trials.map((v) => ({ ...v, timing, group: 'FORMANT SPEECH' })),
   { id: 'original-narrator', label: 'Original narrator', voice: 'narrator', note: 'Existing default voice and natural timing. A baseline, not a recording from the game.' },
   { id: 'hen-natural', label: 'Hen · natural timing', voice: 'hen', note: 'Species-specific cluck syllables; the engine chooses the rhythm.' },
   { id: 'hen-cued', label: 'Hen · matched to beak', voice: 'hen', timing, note: 'The same hen, with every syllable fitted to the animation.' },
   { id: 'hen-radio-cued', label: 'Hen · radio + matched beak', voice: 'hen-radio', timing, note: 'The matched performance through the radio band. No added bit crushing.' },
 ];
 const results = variants.map((v) => {
-  const r = render(example.text, v.voice, { sampleRate, timing: v.timing });
+  const sampled = v.engine === 'sampler';
+  const r = render(example.text, v.voice, { sampleRate, timing: v.timing, bank: sampled ? bank : undefined });
   const said = r.plan.units.filter((u) => u.kind !== 'rest');
   const maxCueErrorMs = Math.max(...said.flatMap((u, i) => [Math.abs(u.t0 - timing.cues[i][0]), Math.abs(u.t1 - timing.cues[i][1])])) * 1000;
   const peak = r.samples.reduce((m, x) => Math.max(m, Math.abs(x)), 0);
@@ -61,18 +74,21 @@ const results = variants.map((v) => {
     timing: { duration: r.plan.duration, cues: said.map((u) => [u.t0, u.t1]) }, sampleRate,
     sceneStart: example.sceneStart, duration: r.plan.duration, audioDuration: r.samples.length / sampleRate,
     words: r.plan.words, mouth: mouthCues(r.plan), reveal: revealSchedule(r.plan),
+    ...(sampled ? { bank: bankInfo, used: r.used } : {}),
   };
   fs.writeFileSync(path.join(out, cueFile), JSON.stringify(cueData, null, 2));
-  return { ...v, voice, clip, sceneClip, cueFile, voiceFile, cueData, scoreSeconds: r.plan.duration, audioSeconds: r.samples.length / sampleRate,
+  return { ...v, engine: sampled ? 'sampler' : 'formant', group: v.group ?? 'EARLIER FORMANT TAKES',
+    ...(sampled ? { bank: bankInfo, used: r.used } : {}),
+    voice, clip, sceneClip, cueFile, voiceFile, cueData, scoreSeconds: r.plan.duration, audioSeconds: r.samples.length / sampleRate,
     maxCueErrorMs, peakDbFS: db(peak), rmsDbFS: db(rms(r.samples)), finite: r.samples.every(Number.isFinite) };
 });
 const report = { text: example.text, reference: sequence ? 'Local game room-02 sprite sequence; speech cues verified against the fixture' : 'No game assets supplied; timing fixture only',
-  sceneStart: example.sceneStart, syllables: timing.cues.length, sampleRate, variants: results };
+  sceneStart: example.sceneStart, syllables: timing.cues.length, sampleRate, bank: bankInfo, variants: results };
 fs.writeFileSync(path.join(out, 'report.json'), JSON.stringify(report, null, 2));
 fs.writeFileSync(path.join(out, 'cast.json'), JSON.stringify(Object.fromEntries(results.map((v) => [v.id, v.voice])), null, 2));
 
-const data = JSON.stringify({ example, sequence, results }).replace(/</g, '\\u003c');
+const data = JSON.stringify({ example, sequence, results, bank: bankInfo }).replace(/</g, '\\u003c');
 const template = fs.readFileSync(path.join(root, 'tools/animal-factory.html'), 'utf8');
-fs.writeFileSync(path.join(out, 'index.html'), template.replace('/*AUDITION_DATA*/', `const DATA = ${data};`));
+fs.writeFileSync(path.join(out, 'index.html'), template.replace('/*AUDITION_DATA*/', () => `const DATA = ${data};`));
 console.log(path.join(out, 'index.html'));
 console.log(JSON.stringify(results.map(({ id, maxCueErrorMs, peakDbFS }) => ({ id, maxCueErrorMs, peakDbFS })), null, 2));

@@ -175,9 +175,18 @@ replace a bank object or call `clearCache()` after editing its samples in place.
 npm run audition:animal-factory
 # Include the actual chicken shot from a local game checkout:
 npm run audition:animal-factory -- --game ../AnimalFactory3D/game
+# Include the existing sliced-audio engine with a locally built bank:
+npm run audition:animal-factory -- --game ../AnimalFactory3D/game --bank banks/glades-of-arcadia.bank.wav
 ```
 
-Open `audition/animal-factory/index.html`. Eight higher speech voices keep the
+Open `audition/animal-factory/index.html`. With `--bank`, six music-slice takes
+appear first: bright (2×), chirpy (2.5×), tiny (3×), clucking, radio clucking,
+and original speed. These call the existing sampler unchanged, with the same
+14 animation cues. No formant voice is mixed into them. Their settings are in
+`examples/animal-factory/bank-voices.json`. Without `--bank`, the page contains
+only the formant comparisons; a missing or invalid requested bank is an error.
+
+Eight higher **formant** speech voices keep the
 original English phonemes while exploring pitch (290–420 Hz), brighter resonance,
 nasality, rasp, breath and a radio filter. Each follows the same animation cues.
 They are stored in `examples/animal-factory/voices.json`: Clear hen, Bright hen,
@@ -189,7 +198,19 @@ Click a voice to play it with the shot, or use Previous / Next voice. Playback
 can match average signal level across takes so volume alone does not decide
 the comparison. Downloaded WAVs retain their original level. Each take also
 exports a standalone voice JSON, ready for the workbench's voice JSON editor
-or `--voice file.json`; `cast.json` contains the whole audition cast.
+or `--voice file.json`; `cast.json` contains the whole audition cast. A sliced
+voice also needs its recording: the page offers the exact bank as
+`voice.bank.wav`, and its JSON names that bank. Load both in the workbench, or
+pass the downloaded bank with `--bank` on the command line. The page labels
+each take's source; `report.json` and the sampled takes' cue files include the
+selected pieces and their positions in the original recording. The bank and
+all generated recordings stay in the ignored audition folder.
+
+To build the Glades bank using the existing tool (MP3 decoding needs FFmpeg):
+
+```bash
+node bin/babble.mjs bank ../glades-of-arcadia/audio/glades-of-arcadia.mp3 -o banks/glades-of-arcadia.bank.wav
+```
 
 The example uses the handler's line at scene time 4.95 s and its 14 syllables,
 including a 100 ms pause. With `--game`, the generator verifies the game's
