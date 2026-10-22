@@ -14,7 +14,8 @@
     "build": "node tools/build-standalone.mjs",
     "serve": "node tools/serve.mjs",
     "audition": "node tools/audition.mjs",
-    "audition:animal-factory": "node tools/animal-factory.mjs"
+    "audition:animal-factory": "node tools/animal-factory.mjs",
+    "audition:animal-factory-sfx": "node tools/animal-factory-sfx.mjs"
   },
   "engines": { "node": ">=20" },
   "license": "MIT"

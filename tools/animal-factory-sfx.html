@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Animal Factory · Weapons & explosions</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#171f1c;color:#eee7d5;font:16px/1.5 system-ui,sans-serif}main{max-width:1160px;margin:auto;padding:28px}a{color:#dfbf79}header{border-bottom:1px solid #425046;padding-bottom:20px;margin-bottom:24px}nav{display:flex;gap:20px;font-size:14px}.eyebrow{color:#d3b46f;font:12px monospace;letter-spacing:.12em;margin-top:18px}h1{font:normal 32px Georgia,serif;margin:8px 0}h2{font:normal 26px Georgia,serif}p{color:#bfc8bc}.layout{display:grid;grid-template-columns:minmax(0,1fr) 310px;gap:28px}.preview{position:sticky;top:20px;align-self:start}.box{padding:18px;background:#222e27;border:1px solid #697b64;border-radius:6px;margin:16px 0}.head,.ends,.buttons{display:flex;align-items:center;justify-content:space-between;gap:12px}.head label{font-weight:600}output{color:#dfbf79;font-variant-numeric:tabular-nums}input[type=range]{width:100%;margin:16px 0 8px;accent-color:#d3b46f;cursor:pointer}.ends,small{font-size:13px;color:#bfc8bc}.divider{border-top:1px solid #425046;margin-top:18px;padding-top:18px}button{padding:9px 13px;border:1px solid #697b64;border-radius:4px;font:inherit;background:#222e27;color:inherit;cursor:pointer}button[aria-pressed=true],.primary{background:#d3b46f;color:#171f1c;border-color:#d3b46f}.buttons{justify-content:flex-start;flex-wrap:wrap}button:disabled,a[aria-disabled=true]{opacity:.5;pointer-events:none}button:focus-visible,a:focus-visible,input:focus-visible{outline:2px solid #dfbf79;outline-offset:3px}audio,canvas{display:block;width:100%}canvas{height:130px;background:#202d25;border:1px solid #425046;border-radius:5px;margin:18px 0}audio{margin:16px 0}#choices{max-height:670px;overflow:auto;padding-right:7px}.choice{width:100%;display:block;text-align:left;margin:8px 0}.choice small{display:block;color:inherit;opacity:.8}.group{color:#d3b46f;font:12px monospace;letter-spacing:.05em;margin:18px 0 10px}#renderStatus{font:13px monospace;min-height:3em;color:#dfbf79}.links{display:flex;flex-wrap:wrap;gap:16px;margin:18px 0}.metrics{font:12px monospace;color:#bfc8bc}footer{border-top:1px solid #425046;padding-top:16px;margin-top:24px;font-size:13px;color:#bfc8bc}#clock{font:13px monospace;color:#bfc8bc}audio[aria-disabled=true]{opacity:.5;pointer-events:none}@media(max-width:800px){main{padding:16px}.layout{grid-template-columns:1fr}.preview{position:static}#choices{max-height:470px}h1{font-size:27px}}
+</style></head><body><main>
+<header><nav><a href="../index.html">Character voices</a><span>Weapons &amp; explosions</span><a id="reel" href="showcase.wav" download>70/20 sample reel</a></nav><div class="eyebrow">BABBLE LAB / ANIMAL FACTORY TACTICS</div><h1>Weapons, explosions &amp; factory impacts</h1><p id="intro">Real sound assets, given the same music-slice treatment as the voices.</p></header>
+<div class="layout"><section class="preview">
+<h2 id="takeName"></h2><div class="buttons"><button id="original" aria-pressed="false">Original</button><button id="treated" aria-pressed="true">Treated</button></div>
+<canvas id="wave" width="900" height="160" aria-label="Selected effect waveform and playback position"></canvas>
+<audio id="audio" controls controlslist="nodownload" preload="auto"></audio><div id="clock"></div>
+<div class="buttons"><button id="replay" class="primary">Play effect</button><button id="previous">Previous</button><button id="next">Next effect</button><button id="reset">Reset 70 / 20</button></div>
+<div class="box"><div class="head"><label for="amount">Sound morph</label><output id="amountValue" for="amount"></output></div><input id="amount" type="range" min="0" max="100" step="1" aria-describedby="morphHelp"><div class="ends"><span>Original tone</span><span>Music-slice tone</span></div><p id="morphHelp"><small>Adjust while playing. The recording keeps its timing and impact shape as the tone changes.</small></p>
+<div class="divider"><div class="head"><label for="slices">Music slices volume</label><output id="sliceValue" for="slices"></output></div><input id="slices" type="range" min="0" max="100" step="1" aria-describedby="sliceHelp"><div class="ends"><span>Muted</span><span>Equal average level</span></div><p id="sliceHelp"><small>Adds the actual sliced music over the morphed effect. Both slider values stay in place across effect changes.</small></p></div>
+<div id="renderStatus" role="status" aria-live="polite"></div></div>
+<p><label><input id="level" type="checkbox" checked> Match listening level for comparison</label></p>
+<div class="links"><a id="wav" download>Effect WAV</a><a id="recipe" download>Recipe JSON</a></div><p id="exportNote"><small></small></p><div id="metrics" class="metrics"></div>
+</section><aside><div id="choices"></div><div class="box"><div class="eyebrow">SOURCE RECORDING</div><p id="source"></p><p id="sourceNote"></p><a id="license" target="_blank" rel="noreferrer">Source licence</a></div><p id="error" role="status"></p></aside></div>
+<footer>Original plays the selected recording after trimming, mono conversion and level adjustment. Treated applies the same spectral-envelope morph and separate music layer used for the voices. The music layer follows the recording’s own loudness. WAV downloads use the settled settings; the recipe records the source, trim, bank and slice choices. These local audition assets retain their source licences. <a href="report.json">Initial settings &amp; provenance</a></footer>
+</main><script>
+/*SFX_DATA*/
+const $=id=>document.getElementById(id),audio=$('audio'),canvas=$('wave'),g=canvas.getContext('2d');
+const {encodeWav}=__m['src/wav.mjs'],{decodeTrack}=__m['tools/audition-morph-render.mjs'];
+const player=__m['tools/audition-player.mjs'].createAuditionPlayer({audio});
+const downloads=new Map(),originals=new Map();
+let selected=0,mode='treated',transportUrl,frame,wantsPlay=false,lastWave;
+const targetLevel=Math.min(...DATA.results.flatMap(v=>[v.originalRmsDbFS,v.rmsDbFS]));
+const control=__m['tools/audition-morph-control.mjs'].createMorphControl({
+ createWorker(){const url=URL.createObjectURL(new Blob([MORPH_WORKER],{type:'text/javascript'}));try{const worker=new Worker(url),stop=worker.terminate.bind(worker);worker.terminate=()=>{stop();URL.revokeObjectURL(url);};return worker;}catch(error){URL.revokeObjectURL(url);throw error;}},
+ getRequest(recipe){return {recipe,sources:Object.fromEntries(recipe.sources.map(s=>[s.id,DATA.sources[s.id]])),preRoll:0,sceneSeconds:recipe.timing.duration};},onUpdate:show,
+});
+const defaultMorph=Math.round(DATA.defaults.amount*100),defaultSlices=Math.round(DATA.defaults.sliceLevel*100);
+$('intro').textContent=`Real sound assets, given the same music-slice treatment as the voices. Start at ${defaultMorph}% morph and ${defaultSlices}% slices; keep the balance while switching effects.`;
+$('reset').textContent=`Reset ${defaultMorph} / ${defaultSlices}`;$('reel').textContent=`${defaultMorph}/${defaultSlices} sample reel`;
+function original(v){if(!originals.has(v.id))originals.set(v.id,{samples:decodeTrack(DATA.sources[v.recipe.sources[0].id]),sampleRate:DATA.sampleRate,preRoll:0,sceneSeconds:v.audioSeconds});return originals.get(v.id);}
+function release(value){for(const key of ['clip','recipe'])URL.revokeObjectURL(value[key]);}
+function urls(state){const id=state.base.id,old=downloads.get(id);if(old&&old.output!==state.output){release(old);downloads.delete(id);}if(!state.output)return {clip:state.take.clip,recipe:state.take.recipeFile};if(!downloads.has(id))downloads.set(id,{output:state.output,clip:URL.createObjectURL(new Blob([state.output.clip],{type:'audio/wav'})),recipe:URL.createObjectURL(new Blob([JSON.stringify(state.take.recipe,null,2)],{type:'application/json'}))});return downloads.get(id);}
+function matchLevel(){const state=control.current,level=mode==='original'?state.base.originalRmsDbFS:state.take.rmsDbFS;audio.volume=$('level').checked?Math.min(1,Math.pow(10,(targetLevel-level)/20)):1;player.volume();}
+function draw(){
+ g.clearRect(0,0,canvas.width,canvas.height);g.strokeStyle='#697b64';g.beginPath();g.moveTo(0,80);g.lineTo(900,80);g.stroke();
+ if(lastWave){g.strokeStyle=mode==='original'?'#bfc8bc':'#dfbf79';g.beginPath();const stride=Math.max(1,Math.floor(lastWave.samples.length/canvas.width));for(let x=0;x<canvas.width;x++){let lo=0,hi=0;for(let i=x*stride;i<Math.min(lastWave.samples.length,(x+1)*stride);i++){lo=Math.min(lo,lastWave.samples[i]);hi=Math.max(hi,lastWave.samples[i]);}g.moveTo(x,80-lo*75);g.lineTo(x,80-hi*75);}g.stroke();const x=canvas.width*audio.currentTime/lastWave.sceneSeconds;g.strokeStyle='#e68a6d';g.beginPath();g.moveTo(x,0);g.lineTo(x,160);g.stroke();}
+ $('clock').textContent=`${audio.currentTime.toFixed(2)} / ${control.current.base.audioSeconds.toFixed(2)} s`;
+}
+function tick(){draw();if(!audio.paused&&!audio.ended)frame=requestAnimationFrame(tick);}
+function show(state){
+ const v=state.base,percent=Math.round(state.amount*100),slicePercent=Math.round(state.sliceLevel*100),playback=mode==='original'?original(v):state.playback,settled=state.status==='ready';
+ $('amount').value=percent;$('amountValue').textContent=percent+'%';$('amount').setAttribute('aria-valuetext',`${percent}% music-slice tone`);
+ $('slices').value=slicePercent;$('sliceValue').textContent=slicePercent+'%';$('slices').setAttribute('aria-valuetext',`${slicePercent}% of effect average level`);
+ $('original').setAttribute('aria-pressed',String(mode==='original'));$('treated').setAttribute('aria-pressed',String(mode==='treated'));
+ $('takeName').textContent=v.label;$('source').textContent=`${v.recipe.sourceAsset.publisher} · ${v.recipe.sourceAsset.library}`;
+ $('sourceNote').textContent=v.recipe.sourceAsset.archiveEntry.split('/').at(-1);$('license').href=v.recipe.license.url;$('license').textContent=v.recipe.license.id+' licence';
+ $('renderStatus').textContent=state.status==='error'?`Could not update: ${state.error}`:settled?`${percent}% morph · slices ${slicePercent}% · ${mode==='original'?'listening to original':'ready'}`:playback?`Updating tone to ${percent}% · playback continues`:'Preparing effect…';
+ $('replay').disabled=!playback;audio.setAttribute('aria-disabled',String(!playback));audio.tabIndex=playback?0:-1;
+ if(playback){player.update(playback);lastWave=playback;matchLevel();}
+ for(const id of ['wav','recipe']){$(id).removeAttribute('href');$(id).setAttribute('aria-disabled',String(mode!=='original'&&!settled));$(id).tabIndex=mode==='original'||settled?0:-1;}
+ if(mode==='original'){$('wav').href=v.originalClip;$('wav').download=v.originalClip;$('recipe').setAttribute('aria-disabled','true');$('recipe').tabIndex=-1;}
+ else if(settled){const asset=urls(state);$('wav').href=asset.clip;$('wav').download=state.take.clip;$('recipe').href=asset.recipe;$('recipe').download=state.take.recipeFile;}
+ $('wav').textContent=mode==='original'?'Original WAV':'Treated WAV';$('exportNote').textContent=mode==='original'?'Trimmed and level-adjusted original recording.':settled?'The WAV and recipe use the current slider settings.':'Downloads will be ready when the requested tone finishes.';
+ $('metrics').textContent=`${v.audioSeconds.toFixed(2)} s · ${mode==='original'?'original':percent+'% morph / '+slicePercent+'% slices'}`;
+ if(state.status==='error')wantsPlay=false;draw();if(playback&&wantsPlay)play();
+}
+function choose(index){wantsPlay=false;selected=index;audio.pause();player.select();cancelAnimationFrame(frame);if(transportUrl)URL.revokeObjectURL(transportUrl);const v=DATA.results[index];transportUrl=URL.createObjectURL(new Blob([encodeWav(new Float32Array(Math.round(v.audioSeconds*DATA.sampleRate)),DATA.sampleRate)],{type:'audio/wav'}));audio.src=transportUrl;audio.load();[...$('choices').querySelectorAll('button')].forEach((b,i)=>b.setAttribute('aria-pressed',String(i===index)));control.select(v);}
+async function play(){try{const context=player.ensure();await context.resume();if(mode==='treated'&&!control.current.playback){wantsPlay=control.current.status==='pending';return;}wantsPlay=false;audio.pause();audio.currentTime=0;await audio.play();}catch(error){$('error').textContent=error.message;}}
+DATA.results.forEach((v,i)=>{if(!i||DATA.results[i-1].group!==v.group){const title=document.createElement('div');title.className='group';title.textContent=v.group;$('choices').append(title);}const b=document.createElement('button');b.className='choice';b.textContent=v.label;const sub=document.createElement('small');sub.textContent=v.recipe.sourceAsset.publisher;b.append(sub);b.onclick=()=>{choose(i);play();};$('choices').append(b);});
+$('amount').oninput=()=>{mode='treated';control.change(Number($('amount').value)/100);};$('slices').oninput=()=>{mode='treated';control.changeSlices(Number($('slices').value)/100);};
+$('reset').onclick=()=>{mode='treated';control.change(DATA.defaults.amount);control.changeSlices(DATA.defaults.sliceLevel);};
+$('original').onclick=()=>{mode='original';show(control.current);};$('treated').onclick=()=>{mode='treated';show(control.current);};
+$('replay').onclick=play;function advance(step){choose((selected+step+DATA.results.length)%DATA.results.length);play();}$('previous').onclick=()=>advance(-1);$('next').onclick=()=>advance(1);$('level').onchange=matchLevel;
+audio.onplay=()=>{player.play().catch(e=>{$('error').textContent=e.message;});cancelAnimationFrame(frame);tick();};audio.onpause=()=>{player.pause();cancelAnimationFrame(frame);draw();};audio.onended=audio.onpause;
+audio.onseeking=()=>player.pause();audio.onseeked=()=>{player.seek();draw();};audio.ontimeupdate=draw;audio.onvolumechange=()=>player.volume();audio.onratechange=()=>player.seek();
+choose(0);
+document.addEventListener('visibilitychange',()=>{if(document.hidden){wantsPlay=false;audio.pause();control.suspend();player.suspend();}else control.select(DATA.results[selected]);});
+addEventListener('pagehide',event=>{wantsPlay=false;audio.pause();audio.removeAttribute('src');audio.load();cancelAnimationFrame(frame);if(event.persisted){control.suspend();player.suspend();}else{control.dispose();player.dispose();}for(const value of downloads.values())release(value);downloads.clear();if(transportUrl)URL.revokeObjectURL(transportUrl);transportUrl=undefined;});
+addEventListener('pageshow',event=>{if(event.persisted)choose(selected);});
+</script></body></html>

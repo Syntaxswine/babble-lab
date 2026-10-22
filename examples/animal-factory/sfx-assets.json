@@ -1,0 +1,387 @@
+{
+  "babbleSfxAssets": 1,
+  "sampleRate": 44100,
+  "defaults": {
+    "amount": 0.7,
+    "sliceLevel": 0.2
+  },
+  "effects": [
+    {
+      "id": "tt33",
+      "label": "TT-33 pistol",
+      "group": "GUNFIRE",
+      "file": "tt33.wav",
+      "preparedFile": "converted/tt33.wav",
+      "trim": {
+        "from": 1.14,
+        "seconds": 1.65
+      },
+      "texture": {
+        "look": "struck",
+        "pitch": 280
+      },
+      "source": {
+        "publisher": "Pole Position",
+        "library": "Tokarev TT-33 semi-automatic pistol",
+        "archiveUrl": "https://ftpmirror.your.org/pub/misc/sonniss2020/Sonniss.com%20-%20GDC%202020%20-%20Game%20Audio%20Bundle%20Part9of14.zip",
+        "archiveEntry": "Pole Position - Tokarev TT-33 semi-automatic pistol/TT33, Firing, t1, Inside Car, Omni, CMC6.wav",
+        "zip": {
+          "name": "Pole Position - Tokarev TT-33 semi-automatic pistol/TT33, Firing, t1, Inside Car, Omni, CMC6.wav",
+          "method": 8,
+          "crc": 1161730396,
+          "compressedSize": 42336948,
+          "size": 66583006,
+          "offset": 1086821124
+        },
+        "sha256": "b8214c42ee028934f767999c09e9f8e05bb8b6e7b894a7bd6145b4eb151fa509"
+      },
+      "license": {
+        "id": "Sonniss-GDC",
+        "url": "https://sonniss.com/gdc-bundle-license/",
+        "version": "2.0, effective 2026-08-27",
+        "page": "https://sonniss.com/gameaudiogdc/",
+        "note": "Use and modification in games are permitted; standalone asset redistribution is restricted."
+      }
+    },
+    {
+      "id": "mosin-m38",
+      "label": "Mosin M38 rifle",
+      "group": "GUNFIRE",
+      "file": "mosin-m38.wav",
+      "preparedFile": "converted/mosin-m38.wav",
+      "trim": {
+        "from": 1.61,
+        "seconds": 2.8
+      },
+      "texture": {
+        "look": "struck",
+        "pitch": 140
+      },
+      "source": {
+        "publisher": "Pole Position",
+        "library": "Mosin-Nagant M38 bolt-action rifle",
+        "archiveUrl": "https://ftpmirror.your.org/pub/misc/sonniss2020/Sonniss.com%20-%20GDC%202020%20-%20Game%20Audio%20Bundle%20Part7of14.zip",
+        "archiveEntry": "Pole Position - Mosin-Nagant M38 bolt-action rifle/M38, Firing, t2, BP4027.wav",
+        "zip": {
+          "name": "Pole Position - Mosin-Nagant M38 bolt-action rifle/M38, Firing, t2, BP4027.wav",
+          "method": 8,
+          "crc": 4090631160,
+          "compressedSize": 16822013,
+          "size": 30823278,
+          "offset": 663762202
+        },
+        "sha256": "2f6cb294de00e0961814d96ad80337e33a95e55fefc8c7f0e3d6f78f72ef0f7b"
+      },
+      "license": {
+        "id": "Sonniss-GDC",
+        "url": "https://sonniss.com/gdc-bundle-license/",
+        "version": "2.0, effective 2026-08-27",
+        "page": "https://sonniss.com/gameaudiogdc/",
+        "note": "Use and modification in games are permitted; standalone asset redistribution is restricted."
+      }
+    },
+    {
+      "id": "ak47-burst",
+      "label": "AK-47 burst",
+      "group": "GUNFIRE",
+      "file": "ak47-burst.wav",
+      "preparedFile": "converted/ak47-burst.wav",
+      "trim": {
+        "from": 0.96,
+        "seconds": 3.8
+      },
+      "texture": {
+        "look": "struck",
+        "pitch": 210
+      },
+      "source": {
+        "publisher": "Watson Wu",
+        "library": "Battle Rifles & Pistols",
+        "archiveUrl": "https://ftpmirror.your.org/pub/misc/sonniss2018/Sonniss.com%20-%20GDC%202018%20-%20Game%20Audio%20Bundle%20Part%208of8.zip",
+        "archiveEntry": "Sonniss.com - GDC 2018 - Game Audio Bundle Part 8of8/Watson Wu - Battle Rifles & Pistols/BR AK47 Burst With Tail.wav",
+        "zip": {
+          "name": "Sonniss.com - GDC 2018 - Game Audio Bundle Part 8of8/Watson Wu - Battle Rifles & Pistols/BR AK47 Burst With Tail.wav",
+          "method": 8,
+          "crc": 3196880041,
+          "compressedSize": 13948638,
+          "size": 24852282,
+          "offset": 1114255948
+        },
+        "sha256": "a6e159961841e8aab9728fb986770516dc7fdd186e790be6527428e75f9a1b61"
+      },
+      "license": {
+        "id": "Sonniss-GDC",
+        "url": "https://sonniss.com/gdc-bundle-license/",
+        "version": "2.0, effective 2026-08-27",
+        "page": "https://sonniss.com/gameaudiogdc/",
+        "note": "Use and modification in games are permitted; standalone asset redistribution is restricted."
+      }
+    },
+    {
+      "id": "shotgun-fire",
+      "label": "Shotgun blast",
+      "group": "GUNFIRE",
+      "file": "shotgun-fire.wav",
+      "preparedFile": "converted/shotgun-fire.wav",
+      "trim": {
+        "from": 0.42,
+        "seconds": 2.3
+      },
+      "texture": {
+        "look": "struck",
+        "pitch": 196
+      },
+      "source": {
+        "publisher": "Wav Junction Sound Effects",
+        "library": "Shotguns",
+        "archiveUrl": "https://ftpmirror.your.org/pub/misc/sonniss2020/Sonniss.com%20-%20GDC%202020%20-%20Game%20Audio%20Bundle%20Part14of14.zip",
+        "archiveEntry": "Wav Junction Sound Effects - Shotguns/0003_Shotgun_Fire_3.wav",
+        "zip": {
+          "name": "Wav Junction Sound Effects - Shotguns/0003_Shotgun_Fire_3.wav",
+          "method": 8,
+          "crc": 4044985343,
+          "compressedSize": 329244,
+          "size": 806628,
+          "offset": 160037183
+        },
+        "sha256": "7edd18958cc251ab6a6c4a8c61f4eb2978a26c042d976ce418c12777afab9f8c"
+      },
+      "license": {
+        "id": "Sonniss-GDC",
+        "url": "https://sonniss.com/gdc-bundle-license/",
+        "version": "2.0, effective 2026-08-27",
+        "page": "https://sonniss.com/gameaudiogdc/",
+        "note": "Use and modification in games are permitted; standalone asset redistribution is restricted."
+      }
+    },
+    {
+      "id": "explosion-deep",
+      "label": "Deep explosion",
+      "group": "EXPLOSIONS",
+      "file": "explosion-deep.wav",
+      "preparedFile": "converted/explosion-deep.wav",
+      "trim": {
+        "from": 0,
+        "seconds": 5.3987
+      },
+      "texture": {
+        "look": "wash",
+        "pitch": 98
+      },
+      "source": {
+        "publisher": "Stefano Cremona",
+        "library": "Explosions",
+        "archiveUrl": "https://ftpmirror.your.org/pub/misc/sonniss2020/Sonniss.com%20-%20GDC%202020%20-%20Game%20Audio%20Bundle%20Part12of14.zip",
+        "archiveEntry": "Stefano Cremona - Explosions/DeepExplosion02.wav",
+        "zip": {
+          "name": "Stefano Cremona - Explosions/DeepExplosion02.wav",
+          "method": 8,
+          "crc": 557013722,
+          "compressedSize": 2825970,
+          "size": 3121100,
+          "offset": 829576235
+        },
+        "sha256": "871cd92855deb1e21540b139a8b85ae17cbc36492fea5509015ffe719bbfff9f"
+      },
+      "license": {
+        "id": "Sonniss-GDC",
+        "url": "https://sonniss.com/gdc-bundle-license/",
+        "version": "2.0, effective 2026-08-27",
+        "page": "https://sonniss.com/gameaudiogdc/",
+        "note": "Use and modification in games are permitted; standalone asset redistribution is restricted."
+      }
+    },
+    {
+      "id": "explosion-large",
+      "label": "Large explosion",
+      "group": "EXPLOSIONS",
+      "file": "explosion-large.wav",
+      "preparedFile": "converted/explosion-large.wav",
+      "trim": {
+        "from": 0,
+        "seconds": 3.5613
+      },
+      "texture": {
+        "look": "wash",
+        "pitch": 112
+      },
+      "source": {
+        "publisher": "Bluezone",
+        "library": "Tank - Explosion Sound Effects",
+        "archiveUrl": "https://ftpmirror.your.org/pub/misc/sonniss2020/Sonniss.com%20-%20GDC%202020%20-%20Game%20Audio%20Bundle%20Part2of14.zip",
+        "archiveEntry": "Bluezone - Tank - Explosion Sound Effects/Bluezone_BC0271_explosion_outdoors_large_005.wav",
+        "zip": {
+          "name": "Bluezone - Tank - Explosion Sound Effects/Bluezone_BC0271_explosion_outdoors_large_005.wav",
+          "method": 8,
+          "crc": 3366961060,
+          "compressedSize": 1876450,
+          "size": 2051512,
+          "offset": 986811595
+        },
+        "sha256": "d7950df12f86c71a77be7768787e4b5e3ced31d63582b2919a615f208d777072"
+      },
+      "license": {
+        "id": "Sonniss-GDC",
+        "url": "https://sonniss.com/gdc-bundle-license/",
+        "version": "2.0, effective 2026-08-27",
+        "page": "https://sonniss.com/gameaudiogdc/",
+        "note": "Use and modification in games are permitted; standalone asset redistribution is restricted."
+      }
+    },
+    {
+      "id": "shotgun-pump",
+      "label": "Shotgun pump",
+      "group": "FACTORY & MECHANISMS",
+      "file": "shotgun-pump.wav",
+      "preparedFile": "converted/shotgun-pump.wav",
+      "trim": {
+        "from": 0.42,
+        "seconds": 0.873
+      },
+      "texture": {
+        "look": "struck",
+        "pitch": 210
+      },
+      "source": {
+        "publisher": "Wav Junction Sound Effects",
+        "library": "Shotguns",
+        "archiveUrl": "https://ftpmirror.your.org/pub/misc/sonniss2020/Sonniss.com%20-%20GDC%202020%20-%20Game%20Audio%20Bundle%20Part14of14.zip",
+        "archiveEntry": "Wav Junction Sound Effects - Shotguns/0019_Shotgun_Pump_Action_1.wav",
+        "zip": {
+          "name": "Wav Junction Sound Effects - Shotguns/0019_Shotgun_Pump_Action_1.wav",
+          "method": 8,
+          "crc": 3359320060,
+          "compressedSize": 165990,
+          "size": 383982,
+          "offset": 160366518
+        },
+        "sha256": "7be43af37abc891030983d132a99416c95d5043519b7cf47ecfd14a274a9bf6b"
+      },
+      "license": {
+        "id": "Sonniss-GDC",
+        "url": "https://sonniss.com/gdc-bundle-license/",
+        "version": "2.0, effective 2026-08-27",
+        "page": "https://sonniss.com/gameaudiogdc/",
+        "note": "Use and modification in games are permitted; standalone asset redistribution is restricted."
+      }
+    },
+    {
+      "id": "rock-debris",
+      "label": "Falling rock & dust",
+      "group": "FACTORY & MECHANISMS",
+      "file": "rock-debris.wav",
+      "preparedFile": "converted/rock-debris.wav",
+      "trim": {
+        "from": 0.07,
+        "seconds": 2.402
+      },
+      "texture": {
+        "look": "wash",
+        "pitch": 140
+      },
+      "source": {
+        "publisher": "Bluezone",
+        "library": "Tank - Explosion Sound Effects",
+        "archiveUrl": "https://ftpmirror.your.org/pub/misc/sonniss2020/Sonniss.com%20-%20GDC%202020%20-%20Game%20Audio%20Bundle%20Part2of14.zip",
+        "archiveEntry": "Bluezone - Tank - Explosion Sound Effects/Bluezone_BC0271_debris_falling_rock_dust_002.wav",
+        "zip": {
+          "name": "Bluezone - Tank - Explosion Sound Effects/Bluezone_BC0271_debris_falling_rock_dust_002.wav",
+          "method": 8,
+          "crc": 4254284293,
+          "compressedSize": 1213858,
+          "size": 1423952,
+          "offset": 985597617
+        },
+        "sha256": "3ce20c63844c752a24361abc35b66ea61ec9dba444564ced873812b2faaf8b86"
+      },
+      "license": {
+        "id": "Sonniss-GDC",
+        "url": "https://sonniss.com/gdc-bundle-license/",
+        "version": "2.0, effective 2026-08-27",
+        "page": "https://sonniss.com/gameaudiogdc/",
+        "note": "Use and modification in games are permitted; standalone asset redistribution is restricted."
+      }
+    },
+    {
+      "id": "metal",
+      "label": "Metal impact",
+      "group": "FACTORY & MECHANISMS",
+      "file": "impactMetal_heavy_000.ogg",
+      "preparedFile": "converted/metal.wav",
+      "trim": {
+        "from": 0,
+        "seconds": 0.1648
+      },
+      "texture": {
+        "look": "struck",
+        "pitch": 280
+      },
+      "source": {
+        "publisher": "Kenney",
+        "library": "Impact Sounds",
+        "archiveUrl": "https://kenney.nl/media/pages/assets/impact-sounds/87b4ddecda-1677589768/kenney_impact-sounds.zip",
+        "archiveEntry": "Audio/impactMetal_heavy_000.ogg",
+        "sha256": "e07045693e4a2b3d165c424e3dab4c781d9ff8880a386880ac89a51315d7f831"
+      },
+      "license": {
+        "id": "CC0-1.0",
+        "url": "https://creativecommons.org/publicdomain/zero/1.0/",
+        "page": "https://kenney.nl/assets/impact-sounds"
+      }
+    },
+    {
+      "id": "glass",
+      "label": "Glass impact",
+      "group": "FACTORY & MECHANISMS",
+      "file": "impactGlass_heavy_000.ogg",
+      "preparedFile": "converted/glass.wav",
+      "trim": {
+        "from": 0,
+        "seconds": 0.2384
+      },
+      "texture": {
+        "look": "struck",
+        "pitch": 420
+      },
+      "source": {
+        "publisher": "Kenney",
+        "library": "Impact Sounds",
+        "archiveUrl": "https://kenney.nl/media/pages/assets/impact-sounds/87b4ddecda-1677589768/kenney_impact-sounds.zip",
+        "archiveEntry": "Audio/impactGlass_heavy_000.ogg",
+        "sha256": "b44b39a940e8948e74b9bd3776bff980df43cf220abdaf0d467dc4c43c0244a5"
+      },
+      "license": {
+        "id": "CC0-1.0",
+        "url": "https://creativecommons.org/publicdomain/zero/1.0/",
+        "page": "https://kenney.nl/assets/impact-sounds"
+      }
+    },
+    {
+      "id": "tin",
+      "label": "Tin impact",
+      "group": "FACTORY & MECHANISMS",
+      "file": "impactTin_medium_000.ogg",
+      "preparedFile": "converted/tin.wav",
+      "trim": {
+        "from": 0,
+        "seconds": 0.1559
+      },
+      "texture": {
+        "look": "tonal",
+        "pitch": 315
+      },
+      "source": {
+        "publisher": "Kenney",
+        "library": "Impact Sounds",
+        "archiveUrl": "https://kenney.nl/media/pages/assets/impact-sounds/87b4ddecda-1677589768/kenney_impact-sounds.zip",
+        "archiveEntry": "Audio/impactTin_medium_000.ogg",
+        "sha256": "f4bbee66ca191ec744b84fc07ac9ed2a6fda955d51cfed8360f12b62815d3cbd"
+      },
+      "license": {
+        "id": "CC0-1.0",
+        "url": "https://creativecommons.org/publicdomain/zero/1.0/",
+        "page": "https://kenney.nl/assets/impact-sounds"
+      }
+    }
+  ]
+}

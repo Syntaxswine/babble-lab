@@ -328,6 +328,48 @@ existing game soundtrack.
 
 ---
 
+### Weapon and explosion audition
+
+The voice audition links to **Weapons & explosions** at
+`audition/animal-factory/sfx/index.html`. Its 11 effects use actual recordings:
+TT-33, Mosin M38, AK-47 burst, shotgun blast and pump, two explosions,
+falling debris, and Kenney metal, glass and tin impacts.
+The long recordings are trimmed to individual shots or bursts, converted to
+44.1 kHz mono and levelled. The original source files are retained separately.
+
+The starting treatment is **70% timbre morph plus a 20% music-slice layer**.
+It uses the same `cepstral-envelope-v1` and `rms-overlay-v1` processing as the
+voices. The source recording is the carrier. `tools/sfx-audio.mjs` uses the
+existing bank sampler for the colour track, with its slice choices, speed and
+event timing recorded in the recipe. A 10 ms RMS envelope makes the music
+follow the effect's own attack and decay. The morph keeps the source timing;
+the extra layer is at 20% of the morphed effect's RMS amplitude.
+
+**Original / Treated** compares the selected effect at the same playback
+position. Both sliders work during playback and carry across effect changes.
+The WAV and recipe downloads use the settled slider settings. Recipes include
+the source archive member, checksums, trim, level adjustment, bank checksum,
+sampler events and source licence.
+`showcase.wav` plays the 11 treated effects in sequence at the starting 70/20
+balance; `showcase.json` identifies their positions in the reel.
+
+To reproduce the audition, supply FFmpeg on PATH or its executable path:
+
+```sh
+node tools/fetch-animal-factory-sfx.mjs --ffmpeg /path/to/ffmpeg
+npm run audition:animal-factory-sfx
+```
+
+The fetcher reads only selected ZIP members from the Sonniss archive mirror,
+checks ZIP CRC and SHA-256, and downloads the small Kenney pack. It records
+provenance in `out/sfx-assets/sources.json`. The source manifest and code are
+committed; the recordings, converted files and finished audition remain in
+ignored `out/` and `audition/` folders. Sonniss assets retain their
+[GDC licence](https://sonniss.com/gdc-bundle-license/), including restrictions
+on standalone redistribution. Kenney Impact Sounds is
+[CC0](https://kenney.nl/assets/impact-sounds). The music bank retains its own
+recorded source and licence note.
+
 ## The tongue: keep manner, permute place
 
 `tongue: 0` says (roughly) the English it is given. Any other number is a

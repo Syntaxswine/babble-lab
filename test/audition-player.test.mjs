@@ -12,11 +12,13 @@ test('live updates crossfade at the advancing transport position without restart
     player.select(); player.update(take(0.2)); await player.play();
     assert.equal(context.sources.length, 1);
     const first = context.sources[0];
+    assert.ok(Math.abs(first.output.gain.events.at(-1)[2] - first.starts[0][0] - .002) < 1e-10);
     assert.ok(Math.abs(first.starts[0][1] - 1.405) < 1e-10);
     assert.ok(first.buffer.samples.subarray(0, 8000).every((x) => x === 0));
     audio.currentTime = 1.702; context.currentTime = 10.3; // simulate rounded media timestamps
     player.update(take(0.3));
     const second = context.sources[1];
+    assert.ok(Math.abs(second.output.gain.events.at(-1)[2] - second.starts[0][0] - .02) < 1e-10);
     assert.equal(audio.currentTime, 1.702);
     assert.equal(audio.paused, false);
     assert.ok(Math.abs(second.starts[0][1] - 1.705) < 1e-10);

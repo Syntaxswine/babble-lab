@@ -43,7 +43,10 @@ export function createAuditionPlayer({ audio, createContext = () => new AudioCon
     const source = context.createBufferSource(), gain = context.createGain();
     source.buffer = buffer; source.playbackRate.value = rate;
     source.connect(gain); gain.connect(volume);
-    gain.gain.setValueAtTime(0, when); gain.gain.linearRampToValueAtTime(1, when + rampSeconds);
+    // A fresh start needs only a tiny fade: long fades would soften gunshots.
+    // Replacing an already-playing sound still uses the full crossfade.
+    const fade = playing.size ? rampSeconds : .002;
+    gain.gain.setValueAtTime(0, when); gain.gain.linearRampToValueAtTime(1, when + fade);
     for (const entry of playing) if (!entry.fading) {
       entry.fading = true;
       ramp(entry.gain.gain, 0, when);
